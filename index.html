@@ -142,23 +142,19 @@
   <div id="root"></div>
 
   <script>
-    /**
-     * Managerku.id GitHub frontend config.
-     * Replace apiUrl with each client's deployed Apps Script Web App URL.
-     */
-    window.MANAGERKU_CONFIG = window.MANAGERKU_CONFIG || {
+    window.MANAGERKU_CONFIG = {
       clientId: "demo-client",
-      apiUrl: "apiUrl: "https://script.google.com/macros/s/AKfycbyyUazz2tldCX6YI0wueT5t0yNAf0RKdR_hN1Cf5xOeOJEgYFeBXeNCXisbrNj0VS_Ykw/exec"",
+      apiUrl: "https://script.google.com/macros/s/AKfycbyyUazz2tldCX6YI0wueT5t0yNAf0RKdR_hN1Cf5xOeOJEgYFeBXeNCXisbrNj0VS_Ykw/exec",
       frontendVersion: "2026.05.03.1"
     };
-
+  
     function apiCall(action, payload) {
       const apiUrl = window.MANAGERKU_CONFIG && window.MANAGERKU_CONFIG.apiUrl;
-
-      if (!apiUrl || apiUrl === "https://script.google.com/macros/s/AKfycbyyUazz2tldCX6YI0wueT5t0yNAf0RKdR_hN1Cf5xOeOJEgYFeBXeNCXisbrNj0VS_Ykw/exec") {
-        return Promise.reject(new Error("GAS Web App API URL belum diisi di MANAGERKU_CONFIG.apiUrl."));
+  
+      if (!apiUrl || apiUrl.indexOf("https://script.google.com/macros/s/") !== 0) {
+        return Promise.reject(new Error("GAS Web App API URL belum valid di MANAGERKU_CONFIG.apiUrl."));
       }
-
+  
       return fetch(apiUrl, {
         method: "POST",
         headers: {
@@ -175,6 +171,7 @@
         return response.json();
       });
     }
+
 
     /**
      * google.script.run compatibility shim.
