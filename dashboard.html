@@ -1,0 +1,3614 @@
+
+(function injectManagerkuDashboardStyles() {
+  if (document.getElementById("managerku-dashboard-styles")) return;
+  const style = document.createElement("style");
+  style.id = "managerku-dashboard-styles";
+  style.textContent = `
+  .chart-placeholder {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+
+  .form-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 0.75rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .form-input:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .quick-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .quick-input:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .filter-select {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 0.75rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: #475569;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .filter-select:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .pagination-control {
+    display: flex;
+    height: 2rem;
+    width: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    transition: all 0.25s ease;
+  }
+
+  .pagination-control:hover:not(:disabled) {
+    background: #f8fafc;
+    transform: translateY(-1px);
+  }
+
+  .pagination-control:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes toastIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spin {
+    animation: spin 0.9s linear infinite;
+  }
+  `;
+  document.head.appendChild(style);
+})();
+
+  const LAUNDRYKU_CACHE = {
+    DASHBOARD: "laundryku_dashboard_cache",
+    SERVICES_PAGE: "laundryku_services_page_cache",
+    EXPENSE: "laundryku_expense_cache",
+    REPORT: "laundryku_report_cache",
+    SETTINGS: "laundryku_settings_cache",
+    DATA_ORDER: "laundryku_data_order_cache",
+    CUSTOMER: "laundryku_customer_cache"
+  };
+
+  function readSessionCache(key) {
+    try {
+      const raw = sessionStorage.getItem(key);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+  }
+
+  function writeSessionCache(key, value) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      // Storage can fail in private mode or when quota is full. App still works without cache.
+    }
+  }
+
+  function clearSessionCachesByPrefixes(prefixes) {
+    const safePrefixes = prefixes || [];
+    Object.keys(sessionStorage).forEach(function(key) {
+      if (safePrefixes.some(function(prefix) { return key.indexOf(prefix) === 0; })) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+
+  function clearAllLaundrykuCaches() {
+    localStorage.removeItem("laundryku_service_catalog_cache");
+    Object.keys(sessionStorage).forEach(function(key) {
+      if (key.indexOf("laundryku_") === 0) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
+
+  function DashboardApp({ user, onLogout }) {
+    const ACTIVE_PAGE_KEY = "laundryku_active_page";
+    const SERVICE_CACHE_KEY = "laundryku_service_catalog_cache";
+
+    const [sidebarOpen, setSidebarOpen] = React.useState(true);
+    const [activePage, setActivePage] = React.useState(function() {
+      return localStorage.getItem(ACTIVE_PAGE_KEY) || "Dashboard";
+    });
+    const [services, setServices] = React.useState([]);
+    const [toast, setToast] = React.useState(null);
+    const [prefillOrder, setPrefillOrder] = React.useState(null);
+    const [dataOrderRefreshKey, setDataOrderRefreshKey] = React.useState(0);
+    const [customerRefreshKey, setCustomerRefreshKey] = React.useState(0);
+
+    const displayName = user && user.name ? user.name : "Administrator";
+    const displayRole = user && user.role ? user.role : "admin";
+    const avatarInitial = displayName.charAt(0).toUpperCase();
+
+    const fallbackServices = [
+      { id: "CKL", category: "Kiloan", name: "Cuci Kering Lipat", unit: "kg", price: 15000 },
+      { id: "CS", category: "Kiloan", name: "Cuci Setrika", unit: "kg", price: 11000 },
+      { id: "SS", category: "Kiloan", name: "Setrika Saja", unit: "kg", price: 7000 },
+      { id: "BC", category: "Satuan", name: "Bed Cover", unit: "pcs", price: 40000 },
+      { id: "SPT", category: "Satuan", name: "Sepatu", unit: "pcs", price: 35000 },
+      { id: "JAS", category: "Satuan", name: "Jas", unit: "pcs", price: 30000 },
+      { id: "EXP-CKL", category: "Express", name: "Express Cuci Kering Lipat", unit: "kg", price: 22000 },
+      { id: "EXP-CS", category: "Express", name: "Express Cuci Setrika", unit: "kg", price: 18000 }
+    ];
+
+    const menuItems = [
+      { label: "Dashboard", icon: "dashboard", ready: true },
+      { label: "Order Baru", icon: "shopping_cart", ready: true },
+      { label: "Data Order", icon: "assignment", ready: true },
+      { label: "Customer", icon: "groups", ready: true },
+      { label: "Layanan & Harga", icon: "sell", ready: true },
+      { label: "Pengeluaran", icon: "account_balance_wallet", ready: true },
+      { label: "Laporan", icon: "bar_chart", ready: true },
+      { label: "Setting", icon: "settings", ready: true }
+    ];
+
+    const orders = [
+      {
+        id: "#ORD-240522-001",
+        customer: "Budi Santoso",
+        phone: "0812 3456 7890",
+        service: "Cuci Kering Lipat",
+        qty: "3 kg",
+        total: "Rp 45.000",
+        status: "Baru",
+        payment: "Belum Dibayar",
+        estimate: "23 Mei 17:00"
+      },
+      {
+        id: "#ORD-240522-002",
+        customer: "Siti Aisyah",
+        phone: "0813 2222 1111",
+        service: "Cuci Setrika",
+        qty: "5 kg",
+        total: "Rp 55.000",
+        status: "Diproses",
+        payment: "DP Rp 20.000",
+        estimate: "23 Mei 18:00"
+      },
+      {
+        id: "#ORD-240522-003",
+        customer: "Andi Wijaya",
+        phone: "0812 8888 9999",
+        service: "Bed Cover",
+        qty: "1 pcs",
+        total: "Rp 40.000",
+        status: "Selesai",
+        payment: "Lunas",
+        estimate: "22 Mei 16:00"
+      },
+      {
+        id: "#ORD-240522-004",
+        customer: "Dewi Lestari",
+        phone: "0813 4444 5555",
+        service: "Cuci Kering Lipat",
+        qty: "7 kg",
+        total: "Rp 85.000",
+        status: "Diambil",
+        payment: "Lunas",
+        estimate: "22 Mei 14:30"
+      },
+      {
+        id: "#ORD-240521-098",
+        customer: "Rizky Pratama",
+        phone: "0812 7777 6666",
+        service: "Cuci Setrika",
+        qty: "4 kg",
+        total: "Rp 50.000",
+        status: "Diproses",
+        payment: "DP Rp 20.000",
+        estimate: "23 Mei 19:00"
+      }
+    ];
+
+    React.useEffect(function() {
+      localStorage.setItem(ACTIVE_PAGE_KEY, activePage);
+    }, [activePage]);
+
+    React.useEffect(function() {
+      loadServiceCatalog(false);
+    }, []);
+
+    function loadServiceCatalog(forceRefresh) {
+      if (!forceRefresh) {
+        try {
+          const cachedServices = localStorage.getItem(SERVICE_CACHE_KEY);
+
+          if (cachedServices) {
+            const parsedServices = JSON.parse(cachedServices);
+
+            if (parsedServices && parsedServices.length) {
+              setServices(parsedServices);
+              return;
+            }
+          }
+        } catch (error) {
+          localStorage.removeItem(SERVICE_CACHE_KEY);
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        setServices(fallbackServices);
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response && response.success && response.services && response.services.length) {
+            setServices(response.services);
+            localStorage.setItem(SERVICE_CACHE_KEY, JSON.stringify(response.services));
+          } else {
+            setServices(fallbackServices);
+          }
+        })
+        .withFailureHandler(function() {
+          setServices(fallbackServices);
+        })
+        .getServiceCatalog();
+    }
+
+    function showToast(type, message) {
+      setToast({ type: type, message: message });
+
+      setTimeout(function() {
+        setToast(null);
+      }, 3200);
+    }
+
+    function clearTableCaches() {
+      clearSessionCachesByPrefixes([
+        LAUNDRYKU_CACHE.DASHBOARD,
+        LAUNDRYKU_CACHE.DATA_ORDER,
+        LAUNDRYKU_CACHE.CUSTOMER,
+        LAUNDRYKU_CACHE.REPORT
+      ]);
+    }
+
+    function openOrderBaru(prefill) {
+      setPrefillOrder(prefill || null);
+      setActivePage("Order Baru");
+    }
+
+    function handleOrderSaved(response) {
+      showToast("success", "Order berhasil disimpan: " + response.orderId);
+      setPrefillOrder(null);
+
+      clearTableCaches();
+
+      setDataOrderRefreshKey(function(value) {
+        return value + 1;
+      });
+
+      setCustomerRefreshKey(function(value) {
+        return value + 1;
+      });
+
+      setActivePage("Data Order");
+    }
+
+    function handleQuickSave(payload) {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        showToast("error", "API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response && response.success) {
+            handleOrderSaved(response);
+          } else {
+            showToast("error", (response && response.message) || "Gagal menyimpan order.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          showToast("error", (error && error.message) || "Server error.");
+        })
+        .saveOrder(payload);
+    }
+
+    function handleServicesChanged(message) {
+      localStorage.removeItem(SERVICE_CACHE_KEY);
+      clearSessionCachesByPrefixes([
+        LAUNDRYKU_CACHE.SERVICES_PAGE,
+        LAUNDRYKU_CACHE.DASHBOARD,
+        LAUNDRYKU_CACHE.REPORT
+      ]);
+      loadServiceCatalog(true);
+      showToast("success", message || "Data layanan berhasil diperbarui.");
+    }
+
+    function handleExpensesChanged(message) {
+      clearSessionCachesByPrefixes([
+        LAUNDRYKU_CACHE.EXPENSE,
+        LAUNDRYKU_CACHE.DASHBOARD,
+        LAUNDRYKU_CACHE.REPORT
+      ]);
+      showToast("success", message || "Pengeluaran berhasil diperbarui.");
+    }
+
+    function handleSettingsChanged(message) {
+      clearSessionCachesByPrefixes([
+        LAUNDRYKU_CACHE.SETTINGS
+      ]);
+      showToast("success", message || "Settings berhasil diperbarui.");
+    }
+
+    function getStatusClass(status) {
+      if (status === "Baru") return "bg-slate-100 text-slate-500";
+      if (status === "Diproses") return "bg-blue-50 text-blue-500";
+      if (status === "Selesai") return "bg-green-50 text-emerald-600";
+      if (status === "Diambil") return "bg-lime-50 text-lime-600";
+      return "bg-slate-100 text-slate-500";
+    }
+
+    function getPaymentClass(payment) {
+      if (payment === "Lunas") return "bg-green-50 text-emerald-600";
+      if (String(payment).indexOf("DP") >= 0) return "bg-orange-50 text-orange-500";
+      return "bg-red-50 text-red-500";
+    }
+
+    function getMenuIcon(label) {
+      var matched = menuItems.find(function(item) {
+        return item.label === label;
+      });
+
+      return matched ? matched.icon : "construction";
+    }
+
+    return (
+      <div className="min-h-screen overflow-hidden bg-slate-50 text-slate-800">
+        {toast && <Toast type={toast.type} message={toast.message} />}
+
+        <div className="flex min-h-screen">
+          <aside
+            className={
+              "hidden h-screen flex-shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-300 ease-in-out lg:flex " +
+              (sidebarOpen ? "w-64" : "w-[88px]")
+            }
+          >
+            <div className="flex items-center justify-between p-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-xl font-black text-white shadow-lg shadow-emerald-100 transition-transform duration-300 hover:rotate-3 hover:scale-105">
+                  MJ
+                </div>
+
+                <div className={"min-w-0 transition-all duration-300 " + (sidebarOpen ? "opacity-100" : "w-0 opacity-0")}>
+                  <h1 className="truncate text-xl font-black tracking-tight text-slate-800">
+                    Managerku.id
+                  </h1>
+                  <p className="truncate text-[10px] font-bold uppercase tracking-widest text-emerald-500">
+                    Laundry System
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-4 py-2">
+              {menuItems.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    setPrefillOrder(null);
+                    setActivePage(item.label);
+                  }}
+                  title={!sidebarOpen ? item.label : ""}
+                  className={
+                    "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl p-3 text-left text-sm font-bold transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md " +
+                    (activePage === item.label
+                      ? "bg-green-50 text-emerald-600 shadow-sm"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-emerald-600")
+                  }
+                >
+                  <span
+                    className={
+                      "absolute inset-y-2 left-0 w-1 rounded-r-full bg-emerald-500 transition-all duration-300 " +
+                      (activePage === item.label ? "opacity-100" : "opacity-0 group-hover:opacity-60")
+                    }
+                  ></span>
+
+                  <span className="material-symbols-outlined shrink-0 text-[22px] transition-all duration-300 group-hover:scale-110 group-hover:rotate-3">
+                    {item.icon}
+                  </span>
+
+                  <span className={"whitespace-nowrap transition-all duration-300 " + (sidebarOpen ? "opacity-100" : "w-0 opacity-0")}>
+                    {item.label}
+                  </span>
+
+                  {!item.ready && sidebarOpen && (
+                    <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-slate-400 transition-colors duration-300 group-hover:bg-emerald-50 group-hover:text-emerald-500">
+                      Soon
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+
+            <div className={"mx-4 mb-6 overflow-hidden rounded-2xl bg-green-50 p-4 transition-all duration-300 " + (sidebarOpen ? "opacity-100" : "px-2 opacity-100")}>
+              {sidebarOpen ? (
+                <div className="relative z-10">
+                  <h4 className="text-sm font-black leading-tight text-slate-800">
+                    Kelola laundry lebih mudah dengan Managerku.id
+                  </h4>
+
+                  <div className="mt-4 flex justify-center">
+                    <div className="flex h-20 w-24 items-center justify-center rounded-2xl bg-white/70 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
+                      <span className="material-symbols-outlined text-[48px] text-emerald-500">
+                        local_laundry_service
+                      </span>
+                    </div>
+                  </div>
+
+                  <button className="mt-4 flex w-full items-center justify-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-black text-emerald-600 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-500 hover:text-white hover:shadow-md">
+                    <span>Pelajari Lebih Lanjut</span>
+                    <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  <span className="material-symbols-outlined text-[30px] text-emerald-500">
+                    local_laundry_service
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className={"px-6 pb-6 text-[10px] text-slate-400 transition-all duration-300 " + (sidebarOpen ? "opacity-100" : "opacity-0")}>
+              <p>© 2026 Laundryku.id</p>
+              <p>Semua hak dilindungi.</p>
+            </div>
+          </aside>
+
+          <main className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-slate-50">
+            <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:px-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-1 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 hover:shadow-md active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-[24px]">
+                      {sidebarOpen ? "menu_open" : "menu"}
+                    </span>
+                  </button>
+
+                  <div className="relative hidden w-full max-w-xl md:block">
+                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                      <span className="material-symbols-outlined text-[22px]">search</span>
+                    </span>
+
+                    <input
+                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none transition-all duration-300 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                      placeholder="Cari order, customer, atau no. WA..."
+                      type="text"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="hidden cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md xl:flex">
+                    <span className="material-symbols-outlined text-[22px] text-slate-400">calendar_month</span>
+                    <span>22 Mei 2024</span>
+                    <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
+                  </div>
+
+                  <button className="relative rounded-xl border border-slate-200 bg-slate-50 p-2 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md">
+                    <span className="material-symbols-outlined text-[24px] text-slate-500">notifications</span>
+                    <span className="absolute right-1.5 top-1.5 flex h-4 w-4 animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-500 text-[10px] font-black text-white">
+                      3
+                    </span>
+                  </button>
+
+                  <div className="hidden cursor-pointer items-center gap-3 border-l border-slate-200 pl-3 md:flex">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full border border-emerald-100 bg-green-50 font-black text-emerald-600 transition-all duration-300 hover:scale-105 hover:shadow-md">
+                      {avatarInitial}
+                    </div>
+
+                    <div className="text-left">
+                      <p className="text-sm font-black leading-tight text-slate-800">{displayName}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{displayRole}</p>
+                    </div>
+
+                    <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
+                  </div>
+
+                  <button
+                    onClick={onLogout}
+                    className="hidden rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:border-red-100 hover:bg-red-50 hover:text-red-600 hover:shadow-md lg:block"
+                  >
+                    Logout
+                  </button>
+
+                  <button
+                    onClick={() => openOrderBaru(null)}
+                    className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-xl active:scale-95"
+                  >
+                    <span className="material-symbols-outlined text-[20px]">add</span>
+                    <span className="hidden sm:inline">Tambah Order</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative mt-3 md:hidden">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                  <span className="material-symbols-outlined text-[22px]">search</span>
+                </span>
+
+                <input
+                  className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none transition-all duration-300 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                  placeholder="Cari order, customer, atau no. WA..."
+                  type="text"
+                />
+              </div>
+            </header>
+
+            {activePage === "Dashboard" ? (
+              <DashboardContent
+                orders={orders}
+                services={services.length ? services : fallbackServices}
+                createdBy={displayName}
+                getStatusClass={getStatusClass}
+                getPaymentClass={getPaymentClass}
+                onQuickSave={handleQuickSave}
+                onRepeatOrder={openOrderBaru}
+                onOpenDataOrder={() => setActivePage("Data Order")}
+              />
+            ) : activePage === "Order Baru" ? (
+              <OrderBaruPage
+                user={user}
+                services={services.length ? services : fallbackServices}
+                prefill={prefillOrder}
+                onCancel={() => setActivePage("Dashboard")}
+                onSaved={handleOrderSaved}
+                onError={(message) => showToast("error", message)}
+              />
+            ) : activePage === "Data Order" ? (
+              <DataOrderPage
+                refreshKey={dataOrderRefreshKey}
+                onError={(message) => showToast("error", message)}
+                onCreateOrder={() => openOrderBaru(null)}
+              />
+            ) : activePage === "Customer" ? (
+              <CustomerPage
+                refreshKey={customerRefreshKey}
+                onError={(message) => showToast("error", message)}
+                onRepeatOrder={openOrderBaru}
+              />
+            ) : activePage === "Layanan & Harga" ? (
+              <LayananHargaPage
+                onError={(message) => showToast("error", message)}
+                onServicesChanged={handleServicesChanged}
+              />
+            ) : activePage === "Pengeluaran" ? (
+              <PengeluaranPage
+                user={user}
+                onError={(message) => showToast("error", message)}
+                onSaved={handleExpensesChanged}
+              />
+            ) : activePage === "Laporan" ? (
+              <LaporanPage
+                onError={(message) => showToast("error", message)}
+              />
+            ) : activePage === "Setting" ? (
+              <SettingsPage
+                onError={(message) => showToast("error", message)}
+                onSaved={handleSettingsChanged}
+              />
+            ) : (
+              <ComingSoonPage
+                title={activePage}
+                icon={getMenuIcon(activePage)}
+                onBack={() => setActivePage("Dashboard")}
+              />
+            )}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+
+  function DashboardContent({ services, createdBy, getStatusClass, getPaymentClass, onQuickSave, onRepeatOrder, onOpenDataOrder }) {
+    const [dashboard, setDashboard] = React.useState({
+      stats: {
+        todayOrders: 0,
+        todayRevenue: 0,
+        processOrders: 0,
+        readyOrders: 0,
+        monthRevenue: 0,
+        totalPaidMonth: 0,
+        totalRemaining: 0,
+        totalCustomers: 0,
+        totalOrders: 0
+      },
+      latestOrders: [],
+      topCustomers: [],
+      dailySeries: [],
+      statusBreakdown: [],
+      paymentBreakdown: []
+    });
+    const [loading, setLoading] = React.useState(false);
+
+    React.useEffect(function() {
+      loadDashboard(false);
+    }, []);
+
+    function applyDashboardResponse(response) {
+      setDashboard({
+        stats: response.stats || dashboard.stats,
+        latestOrders: response.latestOrders || [],
+        topCustomers: response.topCustomers || [],
+        dailySeries: response.dailySeries || [],
+        statusBreakdown: response.statusBreakdown || [],
+        paymentBreakdown: response.paymentBreakdown || []
+      });
+    }
+
+    function loadDashboard(forceRefresh) {
+      if (!forceRefresh) {
+        const cachedResponse = readSessionCache(LAUNDRYKU_CACHE.DASHBOARD);
+        if (cachedResponse && cachedResponse.success) {
+          applyDashboardResponse(cachedResponse);
+          return;
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        return;
+      }
+
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+          if (response && response.success) {
+            applyDashboardResponse(response);
+            writeSessionCache(LAUNDRYKU_CACHE.DASHBOARD, response);
+          }
+        })
+        .withFailureHandler(function() {
+          setLoading(false);
+        })
+        .getDashboardSummary();
+    }
+
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+
+    const stats = dashboard.stats || {};
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">Live Dashboard</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">Dashboard Utama</h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Ringkasan order, omzet, piutang, customer, dan performa operasional dari Google Sheets.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => loadDashboard(true)}
+            className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+          >
+            <span className={"material-symbols-outlined text-[20px] " + (loading ? "spin" : "")}>refresh</span>
+            Refresh Dashboard
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <StatCard icon="shopping_bag" iconClass="bg-green-800" title="Order Hari Ini" value={String(stats.todayOrders || 0)} note="order masuk hari ini" />
+          <StatCard icon="payments" iconClass="bg-green-600" title="Omzet Hari Ini" value={formatCurrency(stats.todayRevenue)} note="grand total hari ini" />
+          <StatCard icon="inventory_2" iconClass="bg-lime-600" title="Order Diproses" value={String(stats.processOrders || 0)} note="status Diproses" />
+          <StatCard icon="check" iconClass="bg-green-500" title="Selesai Siap Ambil" value={String(stats.readyOrders || 0)} note="status Selesai" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <StatCard icon="calendar_month" iconClass="bg-emerald-600" title="Omzet Bulan Ini" value={formatCurrency(stats.monthRevenue)} note="berdasarkan Created At" />
+          <StatCard icon="account_balance_wallet" iconClass="bg-orange-400" title="Cash Masuk Bulan Ini" value={formatCurrency(stats.totalPaidMonth)} note="paid amount" />
+          <StatCard icon="receipt_long" iconClass="bg-red-400" title="Piutang Aktif" value={formatCurrency(stats.totalRemaining)} note="remaining amount" />
+          <StatCard icon="groups" iconClass="bg-purple-500" title="Total Customer" value={String(stats.totalCustomers || 0)} note={(stats.totalOrders || 0) + " total order"} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <DashboardTrendCard dailySeries={dashboard.dailySeries} formatCurrency={formatCurrency} />
+          <QuickInputCard services={services} createdBy={createdBy} onQuickSave={onQuickSave} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+          <DashboardLatestOrdersTable
+            orders={dashboard.latestOrders}
+            getStatusClass={getStatusClass}
+            getPaymentClass={getPaymentClass}
+            onOpenDataOrder={onOpenDataOrder}
+          />
+
+          <div className="space-y-6">
+            <DashboardTopCustomersCard customers={dashboard.topCustomers} onRepeatOrder={onRepeatOrder} />
+            <DashboardBreakdownCard title="Status Order" items={dashboard.statusBreakdown} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function DashboardTrendCard({ dailySeries, formatCurrency }) {
+    const maxValue = dailySeries.reduce(function(max, item) {
+      return Math.max(max, Number(item.income || 0), Number(item.expense || 0));
+    }, 0);
+
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h3 className="font-black text-slate-800">Income vs Expense</h3>
+            <p className="mt-1 text-sm font-medium text-slate-500">7 hari terakhir dari order dan pengeluaran.</p>
+          </div>
+          <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600">Live</span>
+        </div>
+
+        <div className="flex h-64 items-end gap-3 rounded-2xl bg-slate-50 p-5">
+          {(dailySeries || []).map((item) => {
+            const incomeHeight = maxValue > 0 ? Math.max((Number(item.income || 0) / maxValue) * 100, Number(item.income || 0) > 0 ? 8 : 3) : 3;
+            const expenseHeight = maxValue > 0 ? Math.max((Number(item.expense || 0) / maxValue) * 100, Number(item.expense || 0) > 0 ? 8 : 3) : 3;
+
+            return (
+              <div key={item.key || item.label} className="flex flex-1 flex-col items-center gap-2">
+                <div className="flex h-44 w-full items-end justify-center gap-1 rounded-xl bg-white px-2 py-2 shadow-inner">
+                  <div title={formatCurrency(item.income)} className="w-1/2 rounded-t-lg bg-emerald-500" style={{ height: incomeHeight + "%" }}></div>
+                  <div title={formatCurrency(item.expense)} className="w-1/2 rounded-t-lg bg-orange-400" style={{ height: expenseHeight + "%" }}></div>
+                </div>
+                <span className="text-[10px] font-black text-slate-500">{item.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex gap-4 text-xs font-black text-slate-500">
+          <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-emerald-500"></span>Income</span>
+          <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full bg-orange-400"></span>Expense</span>
+        </div>
+      </div>
+    );
+  }
+
+  function DashboardLatestOrdersTable({ orders, getStatusClass, getPaymentClass, onOpenDataOrder }) {
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+
+    return (
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
+        <div className="flex items-center justify-between border-b border-slate-100 p-6">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[22px] text-slate-400">assignment</span>
+            <h3 className="font-black text-slate-800">Order Terbaru</h3>
+          </div>
+          <button type="button" onClick={onOpenDataOrder} className="flex items-center gap-1 text-xs font-black text-emerald-500 transition-all duration-300 hover:translate-x-1 hover:underline">
+            Lihat Semua <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-left">
+            <thead>
+              <tr className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <th className="px-6 py-4">Order ID</th>
+                <th className="px-6 py-4">Customer</th>
+                <th className="px-6 py-4">Layanan</th>
+                <th className="px-6 py-4">Total</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Bayar</th>
+                <th className="px-6 py-4">Estimasi</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {(!orders || orders.length === 0) && (
+                <tr><td colSpan="7" className="px-6 py-12 text-center text-sm font-bold text-slate-400">Belum ada order terbaru.</td></tr>
+              )}
+              {(orders || []).map((order) => (
+                <tr key={order.orderId} className="text-sm transition-all duration-300 hover:bg-slate-50">
+                  <td className="px-6 py-4 font-black text-emerald-500">{order.orderId}</td>
+                  <td className="px-6 py-4"><p className="font-black text-slate-800">{order.customerName}</p><p className="text-xs text-slate-400">{order.whatsapp}</p></td>
+                  <td className="px-6 py-4"><p className="max-w-[240px] truncate font-bold text-slate-600">{order.serviceSummary}</p></td>
+                  <td className="px-6 py-4 font-black text-slate-800">{formatCurrency(order.grandTotal)}</td>
+                  <td className="px-6 py-4"><span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + getStatusClass(order.status)}>{order.status}</span></td>
+                  <td className="px-6 py-4"><span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + getPaymentClass(order.paymentStatus)}>{order.paymentStatus}</span></td>
+                  <td className="px-6 py-4 text-xs font-black text-slate-500">{order.estimatedFinish || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  function DashboardTopCustomersCard({ customers, onRepeatOrder }) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[20px] text-emerald-500">workspace_premium</span>
+          <h3 className="text-sm font-black text-slate-800">Top Customer</h3>
+        </div>
+        <div className="space-y-3">
+          {(!customers || customers.length === 0) && <p className="text-sm font-bold text-slate-400">Belum ada customer.</p>}
+          {(customers || []).map((customer) => (
+            <div key={customer.customerId} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3">
+              <div>
+                <p className="text-xs font-black text-slate-800">{customer.customerName}</p>
+                <p className="text-[10px] font-bold text-slate-400">{customer.totalOrders} order</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRepeatOrder({ orderType: "repeat", customerName: customer.customerName, whatsapp: customer.whatsapp, address: customer.address || "", items: [] })}
+                className="rounded-lg border border-emerald-200 bg-green-50 px-3 py-1.5 text-[10px] font-black text-emerald-600"
+              >
+                Repeat
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function DashboardBreakdownCard({ title, items }) {
+    const total = (items || []).reduce(function(sum, item) { return sum + Number(item.count || 0); }, 0);
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h3 className="mb-5 text-sm font-black text-slate-800">{title}</h3>
+        <div className="space-y-3">
+          {(!items || items.length === 0) && <p className="text-sm font-bold text-slate-400">Belum ada data.</p>}
+          {(items || []).map((item) => {
+            const width = total > 0 ? Math.max((Number(item.count || 0) / total) * 100, 8) : 8;
+            return (
+              <div key={item.label}>
+                <div className="mb-1 flex items-center justify-between text-xs font-black text-slate-600">
+                  <span>{item.label}</span><span>{item.count}</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{ width: width + "%" }}></div></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function OrderBaruPage({ user, services, prefill, onCancel, onSaved, onError }) {
+    const defaultService = services && services.length ? services[0] : null;
+
+    const [orderType, setOrderType] = React.useState(prefill && prefill.orderType ? prefill.orderType : "new");
+    const [customerName, setCustomerName] = React.useState(prefill && prefill.customerName ? prefill.customerName : "");
+    const [whatsapp, setWhatsapp] = React.useState(prefill && prefill.whatsapp ? prefill.whatsapp : "");
+    const [address, setAddress] = React.useState(prefill && prefill.address ? prefill.address : "");
+    const [paymentMethod, setPaymentMethod] = React.useState("Cash");
+    const [paidAmount, setPaidAmount] = React.useState(0);
+    const [discount, setDiscount] = React.useState(0);
+    const [additionalFee, setAdditionalFee] = React.useState(0);
+    const [estimatedFinish, setEstimatedFinish] = React.useState("23 Mei 2024 17:00");
+    const [notes, setNotes] = React.useState("");
+    const [saving, setSaving] = React.useState(false);
+    const [items, setItems] = React.useState(function() {
+      if (prefill && prefill.items && prefill.items.length) return prefill.items;
+      if (!defaultService) return [];
+
+      return [
+        {
+          serviceId: defaultService.id,
+          category: defaultService.category,
+          serviceName: defaultService.name,
+          unit: defaultService.unit,
+          price: defaultService.price,
+          qty: 1
+        }
+      ];
+    });
+
+    React.useEffect(function() {
+      if ((!items || !items.length) && services && services.length) {
+        const service = services[0];
+
+        setItems([
+          {
+            serviceId: service.id,
+            category: service.category,
+            serviceName: service.name,
+            unit: service.unit,
+            price: service.price,
+            qty: 1
+          }
+        ]);
+      }
+    }, [services.length]);
+
+    const subtotal = items.reduce(function(total, item) {
+      return total + Number(item.price || 0) * Number(item.qty || 0);
+    }, 0);
+
+    const grandTotal = subtotal - Number(discount || 0) + Number(additionalFee || 0);
+    const remainingAmount = grandTotal - Number(paidAmount || 0);
+
+    let paymentStatus = "Belum Dibayar";
+
+    if (Number(paidAmount || 0) >= grandTotal && grandTotal > 0) {
+      paymentStatus = "Lunas";
+    }
+
+    if (Number(paidAmount || 0) > 0 && Number(paidAmount || 0) < grandTotal) {
+      paymentStatus = "DP";
+    }
+
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+
+    function updateItem(index, field, value) {
+      const nextItems = items.slice();
+      const current = Object.assign({}, nextItems[index]);
+
+      if (field === "serviceId") {
+        const selectedService = services.find(function(service) {
+          return service.id === value;
+        });
+
+        if (selectedService) {
+          current.serviceId = selectedService.id;
+          current.category = selectedService.category;
+          current.serviceName = selectedService.name;
+          current.unit = selectedService.unit;
+          current.price = selectedService.price;
+        }
+      } else {
+        current[field] = value;
+      }
+
+      nextItems[index] = current;
+      setItems(nextItems);
+    }
+
+    function addItem() {
+      if (!services.length) return;
+
+      const service = services[0];
+
+      setItems(
+        items.concat([
+          {
+            serviceId: service.id,
+            category: service.category,
+            serviceName: service.name,
+            unit: service.unit,
+            price: service.price,
+            qty: 1
+          }
+        ])
+      );
+    }
+
+    function removeItem(index) {
+      if (items.length === 1) return;
+
+      setItems(
+        items.filter(function(_, itemIndex) {
+          return itemIndex !== index;
+        })
+      );
+    }
+
+    function submitOrder(event) {
+      event.preventDefault();
+
+      if (!customerName.trim()) {
+        onError("Nama customer wajib diisi.");
+        return;
+      }
+
+      if (!whatsapp.trim()) {
+        onError("No. WhatsApp wajib diisi.");
+        return;
+      }
+
+      if (!items.length) {
+        onError("Minimal 1 layanan harus dipilih.");
+        return;
+      }
+
+      const payload = {
+        orderType: orderType,
+        customerName: customerName.trim(),
+        whatsapp: whatsapp.trim(),
+        address: address.trim(),
+        paymentStatus: paymentStatus,
+        paymentMethod: paymentMethod,
+        estimatedFinish: estimatedFinish,
+        discount: Number(discount || 0),
+        additionalFee: Number(additionalFee || 0),
+        paidAmount: Number(paidAmount || 0),
+        notes: notes.trim(),
+        createdBy: user && user.name ? user.name : "Administrator",
+        items: items.map(function(item) {
+          return {
+            serviceId: item.serviceId,
+            category: item.category,
+            serviceName: item.serviceName,
+            unit: item.unit,
+            price: Number(item.price || 0),
+            qty: Number(item.qty || 0)
+          };
+        })
+      };
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      setSaving(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setSaving(false);
+
+          if (response && response.success) {
+            onSaved(response);
+          } else {
+            onError((response && response.message) || "Gagal menyimpan order.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setSaving(false);
+          onError((error && error.message) || "Server error.");
+        })
+        .saveOrder(payload);
+    }
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+              Modul Order
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">
+              Input Order Baru
+            </h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Buat order baru, repeat order, pilih layanan, hitung otomatis, lalu simpan ke database.
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:bg-slate-50"
+            >
+              Kembali
+            </button>
+
+            <button
+              type="button"
+              onClick={addItem}
+              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600"
+            >
+              <span className="material-symbols-outlined text-[20px]">add</span>
+              Tambah Layanan
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={submitOrder} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px]">
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-5 flex items-center gap-2 font-black text-slate-800">
+                <span className="material-symbols-outlined text-emerald-500">person</span>
+                Data Customer
+              </h3>
+
+              <div className="mb-5 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-2">
+                <button
+                  type="button"
+                  onClick={() => setOrderType("new")}
+                  className={
+                    "rounded-xl px-4 py-3 text-sm font-black transition-all duration-300 " +
+                    (orderType === "new" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700")
+                  }
+                >
+                  Order Baru
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrderType("repeat")}
+                  className={
+                    "rounded-xl px-4 py-3 text-sm font-black transition-all duration-300 " +
+                    (orderType === "repeat" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700")
+                  }
+                >
+                  Repeat Order
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField label="Nama Customer">
+                  <input
+                    className="form-input"
+                    value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)}
+                    placeholder="Contoh: Budi Santoso"
+                  />
+                </FormField>
+
+                <FormField label="No. WhatsApp">
+                  <input
+                    className="form-input"
+                    value={whatsapp}
+                    onChange={(event) => setWhatsapp(event.target.value)}
+                    placeholder="Contoh: 081234567890"
+                  />
+                </FormField>
+
+                <div className="md:col-span-2">
+                  <FormField label="Alamat / Catatan Customer">
+                    <textarea
+                      className="form-input min-h-[90px] resize-none"
+                      value={address}
+                      onChange={(event) => setAddress(event.target.value)}
+                      placeholder="Alamat pickup/delivery atau catatan customer"
+                    ></textarea>
+                  </FormField>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-5 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 font-black text-slate-800">
+                  <span className="material-symbols-outlined text-emerald-500">local_laundry_service</span>
+                  Layanan Order
+                </h3>
+
+                <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600">
+                  {items.length} item layanan
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {items.map((item, index) => (
+                  <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition-all duration-300 hover:border-emerald-200 hover:bg-white hover:shadow-sm">
+                    <div className="mb-4 flex items-center justify-between">
+                      <p className="text-sm font-black text-slate-700">
+                        Layanan #{index + 1}
+                      </p>
+
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        disabled={items.length === 1}
+                        className="rounded-lg px-3 py-1 text-xs font-black text-red-500 transition-all duration-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        Hapus
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_120px_120px_140px]">
+                      <FormField label="Pilih Layanan">
+                        <select
+                          className="form-input"
+                          value={item.serviceId}
+                          onChange={(event) => updateItem(index, "serviceId", event.target.value)}
+                        >
+                          {services.map((service) => (
+                            <option key={service.id} value={service.id}>
+                              {service.category} - {service.name} / {formatCurrency(service.price)} per {service.unit}
+                            </option>
+                          ))}
+                        </select>
+                      </FormField>
+
+                      <FormField label="Qty">
+                        <input
+                          className="form-input"
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={item.qty}
+                          onChange={(event) => updateItem(index, "qty", event.target.value)}
+                        />
+                      </FormField>
+
+                      <FormField label="Unit">
+                        <input className="form-input bg-slate-100" value={item.unit} readOnly />
+                      </FormField>
+
+                      <FormField label="Subtotal">
+                        <input
+                          className="form-input bg-slate-100 font-black text-emerald-600"
+                          value={formatCurrency(Number(item.price || 0) * Number(item.qty || 0))}
+                          readOnly
+                        />
+                      </FormField>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-5 flex items-center gap-2 font-black text-slate-800">
+                <span className="material-symbols-outlined text-emerald-500">edit_note</span>
+                Detail Order
+              </h3>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField label="Estimasi Selesai">
+                  <input
+                    className="form-input"
+                    value={estimatedFinish}
+                    onChange={(event) => setEstimatedFinish(event.target.value)}
+                    placeholder="23 Mei 2024 17:00"
+                  />
+                </FormField>
+
+                <FormField label="Metode Pembayaran">
+                  <select
+                    className="form-input"
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value)}
+                  >
+                    <option>Cash</option>
+                    <option>Transfer</option>
+                    <option>QRIS</option>
+                  </select>
+                </FormField>
+
+                <div className="md:col-span-2">
+                  <FormField label="Catatan Order">
+                    <textarea
+                      className="form-input min-h-[90px] resize-none"
+                      value={notes}
+                      onChange={(event) => setNotes(event.target.value)}
+                      placeholder="Contoh: noda di bagian lengan, customer minta express, dll."
+                    ></textarea>
+                  </FormField>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-6">
+            <div className="sticky top-28 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-5 flex items-center gap-2 font-black text-slate-800">
+                <span className="material-symbols-outlined text-emerald-500">receipt_long</span>
+                Ringkasan Pembayaran
+              </h3>
+
+              <div className="space-y-4">
+                <SummaryRow label="Subtotal" value={formatCurrency(subtotal)} />
+
+                <FormField label="Diskon">
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={discount}
+                    onChange={(event) => setDiscount(event.target.value)}
+                  />
+                </FormField>
+
+                <FormField label="Biaya Tambahan">
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={additionalFee}
+                    onChange={(event) => setAdditionalFee(event.target.value)}
+                  />
+                </FormField>
+
+                <div className="rounded-2xl bg-green-50 p-4">
+                  <p className="text-xs font-black uppercase tracking-widest text-emerald-600">
+                    Grand Total
+                  </p>
+                  <p className="mt-1 text-3xl font-black text-emerald-700">
+                    {formatCurrency(grandTotal)}
+                  </p>
+                </div>
+
+                <FormField label="Jumlah Dibayar">
+                  <input
+                    className="form-input"
+                    type="number"
+                    value={paidAmount}
+                    onChange={(event) => setPaidAmount(event.target.value)}
+                  />
+                </FormField>
+
+                <SummaryRow label="Sisa Pembayaran" value={formatCurrency(remainingAmount)} />
+
+                <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-4">
+                  <span className="text-sm font-black text-slate-600">Status Bayar</span>
+                  <span className={"rounded-full px-3 py-1 text-xs font-black uppercase " + (paymentStatus === "Lunas" ? "bg-green-100 text-emerald-600" : paymentStatus === "DP" ? "bg-orange-100 text-orange-600" : "bg-red-100 text-red-600")}>
+                    {paymentStatus}
+                  </span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-4 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-xl active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className={"material-symbols-outlined text-[20px] " + (saving ? "spin" : "")}>
+                    {saving ? "progress_activity" : "save"}
+                  </span>
+                  {saving ? "Menyimpan..." : "Simpan ke Database"}
+                </button>
+              </div>
+            </div>
+          </aside>
+        </form>
+      </div>
+    );
+
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+  }
+
+  function DataOrderPage({ refreshKey, onError, onCreateOrder }) {
+    const [orders, setOrders] = React.useState([]);
+    const [loading, setLoading] = React.useState(false);
+    const [search, setSearch] = React.useState("");
+    const [appliedSearch, setAppliedSearch] = React.useState("");
+    const [orderType, setOrderType] = React.useState("all");
+    const [status, setStatus] = React.useState("all");
+    const [paymentStatus, setPaymentStatus] = React.useState("all");
+    const [pageSize, setPageSize] = React.useState(10);
+    const [page, setPage] = React.useState(1);
+    const [totalRows, setTotalRows] = React.useState(0);
+    const [totalPages, setTotalPages] = React.useState(1);
+
+    React.useEffect(function() {
+      loadOrders(false);
+    }, [page, pageSize, orderType, status, paymentStatus, appliedSearch, refreshKey]);
+
+    function getDataOrderCacheKey() {
+      return [
+        "laundryku_data_order_cache",
+        page,
+        pageSize,
+        appliedSearch,
+        orderType,
+        status,
+        paymentStatus,
+        refreshKey
+      ].join("_");
+    }
+
+    function loadOrders(forceRefresh) {
+      const cacheKey = getDataOrderCacheKey();
+
+      if (!forceRefresh) {
+        try {
+          const cachedResponse = sessionStorage.getItem(cacheKey);
+
+          if (cachedResponse) {
+            const parsedResponse = JSON.parse(cachedResponse);
+
+            if (parsedResponse && parsedResponse.success) {
+              setOrders(parsedResponse.orders || []);
+              setPage(parsedResponse.page || 1);
+              setPageSize(parsedResponse.pageSize || 10);
+              setTotalRows(parsedResponse.totalRows || 0);
+              setTotalPages(parsedResponse.totalPages || 1);
+              return;
+            }
+          }
+        } catch (error) {
+          sessionStorage.removeItem(cacheKey);
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+
+          if (response && response.success) {
+            setOrders(response.orders || []);
+            setPage(response.page || 1);
+            setPageSize(response.pageSize || 10);
+            setTotalRows(response.totalRows || 0);
+            setTotalPages(response.totalPages || 1);
+
+            sessionStorage.setItem(cacheKey, JSON.stringify(response));
+          } else {
+            onError((response && response.message) || "Gagal mengambil data order.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setLoading(false);
+          onError((error && error.message) || "Server error saat mengambil data order.");
+        })
+        .getOrdersPage({
+          page: page,
+          pageSize: pageSize,
+          search: appliedSearch,
+          orderType: orderType,
+          status: status,
+          paymentStatus: paymentStatus
+        });
+    }
+
+    function applySearch(event) {
+      if (event && event.preventDefault) {
+        event.preventDefault();
+      }
+
+      setPage(1);
+      setAppliedSearch(search.trim());
+    }
+
+    function resetFilters() {
+      setSearch("");
+      setAppliedSearch("");
+      setOrderType("all");
+      setStatus("all");
+      setPaymentStatus("all");
+      setPageSize(10);
+      setPage(1);
+    }
+
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+
+    function orderTypeLabel(value) {
+      if (String(value).toLowerCase() === "repeat") return "Repeat";
+      return "New";
+    }
+
+    function orderTypeClass(value) {
+      if (String(value).toLowerCase() === "repeat") {
+        return "bg-purple-50 text-purple-600";
+      }
+
+      return "bg-emerald-50 text-emerald-600";
+    }
+
+    function statusClass(value) {
+      if (value === "Baru") return "bg-slate-100 text-slate-500";
+      if (value === "Diproses") return "bg-blue-50 text-blue-500";
+      if (value === "Selesai") return "bg-green-50 text-emerald-600";
+      if (value === "Diambil") return "bg-lime-50 text-lime-600";
+      return "bg-slate-100 text-slate-500";
+    }
+
+    function paymentClass(value) {
+      if (value === "Lunas") return "bg-green-50 text-emerald-600";
+      if (value === "DP") return "bg-orange-50 text-orange-500";
+      return "bg-red-50 text-red-500";
+    }
+
+    function goToPage(nextPage) {
+      if (nextPage < 1 || nextPage > totalPages || nextPage === page) {
+        return;
+      }
+
+      setPage(nextPage);
+    }
+
+    function getPageNumbers() {
+      return buildPageNumbers(page, totalPages);
+    }
+
+    const firstRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+    const lastRow = Math.min(page * pageSize, totalRows);
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+              Database Order
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">
+              Data Order
+            </h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Semua order yang tersimpan di Google Sheets, lengkap dengan filter dan pagination.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => loadOrders(true)}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+            >
+              <span className={"material-symbols-outlined text-[20px] " + (loading ? "spin" : "")}>
+                refresh
+              </span>
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              onClick={onCreateOrder}
+              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-xl"
+            >
+              <span className="material-symbols-outlined text-[20px]">add</span>
+              Tambah Order
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_160px_170px_180px_140px_auto]">
+            <form onSubmit={applySearch} className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <span className="material-symbols-outlined text-[20px]">search</span>
+              </span>
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm font-bold outline-none transition-all duration-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                placeholder="Cari order, customer, WA, layanan..."
+              />
+            </form>
+
+            <select value={orderType} onChange={(event) => { setPage(1); setOrderType(event.target.value); }} className="filter-select">
+              <option value="all">Semua Tipe</option>
+              <option value="new">Order Baru</option>
+              <option value="repeat">Repeat Order</option>
+            </select>
+
+            <select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value); }} className="filter-select">
+              <option value="all">Semua Status</option>
+              <option value="Baru">Baru</option>
+              <option value="Diproses">Diproses</option>
+              <option value="Selesai">Selesai</option>
+              <option value="Diambil">Diambil</option>
+            </select>
+
+            <select value={paymentStatus} onChange={(event) => { setPage(1); setPaymentStatus(event.target.value); }} className="filter-select">
+              <option value="all">Semua Bayar</option>
+              <option value="Belum Dibayar">Belum Dibayar</option>
+              <option value="DP">DP</option>
+              <option value="Lunas">Lunas</option>
+            </select>
+
+            <select value={pageSize} onChange={(event) => { setPage(1); setPageSize(Number(event.target.value)); }} className="filter-select">
+              <option value="10">Show 10</option>
+              <option value="20">Show 20</option>
+              <option value="50">Show 50</option>
+            </select>
+
+            <div className="flex gap-2">
+              <button type="button" onClick={applySearch} className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white transition-all duration-300 hover:bg-emerald-600">
+                Filter
+              </button>
+
+              <button type="button" onClick={resetFilters} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-500 transition-all duration-300 hover:bg-slate-50">
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 p-5">
+            <div>
+              <h3 className="font-black text-slate-800">Semua Order</h3>
+              <p className="mt-1 text-xs font-bold text-slate-400">
+                Menampilkan {firstRow}–{lastRow} dari {totalRows} order
+              </p>
+            </div>
+
+            {loading && (
+              <div className="flex items-center gap-2 rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600">
+                <span className="material-symbols-outlined spin text-[16px]">progress_activity</span>
+                Loading
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px] text-left">
+              <thead>
+                <tr className="bg-slate-50/70 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="px-5 py-4">Order ID</th>
+                  <th className="px-5 py-4">Tanggal</th>
+                  <th className="px-5 py-4">Customer</th>
+                  <th className="px-5 py-4">Tipe</th>
+                  <th className="px-5 py-4">Layanan</th>
+                  <th className="px-5 py-4">Total</th>
+                  <th className="px-5 py-4">Bayar</th>
+                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Estimasi</th>
+                  <th className="px-5 py-4">Created By</th>
+                  <th className="px-5 py-4"></th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {!loading && orders.length === 0 && (
+                  <tr>
+                    <td colSpan="11" className="px-5 py-14 text-center">
+                      <div className="mx-auto flex max-w-sm flex-col items-center">
+                        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+                          <span className="material-symbols-outlined text-[34px]">assignment</span>
+                        </div>
+                        <p className="font-black text-slate-700">Belum ada data order</p>
+                        <p className="mt-1 text-sm text-slate-400">Coba ubah filter atau buat order baru.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
+                {orders.map((order) => (
+                  <tr key={order.orderId} className="group text-sm transition-all duration-300 hover:bg-slate-50">
+                    <td className="px-5 py-4 font-black text-emerald-600">{order.orderId}</td>
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdAt}</td>
+                    <td className="px-5 py-4">
+                      <p className="font-black text-slate-800">{order.customerName}</p>
+                      <p className="text-xs text-slate-400">{order.whatsapp}</p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + orderTypeClass(order.orderType)}>
+                        {orderTypeLabel(order.orderType)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="max-w-[260px] truncate font-bold text-slate-600">{order.serviceSummary}</p>
+                    </td>
+                    <td className="px-5 py-4 font-black text-slate-800">{formatCurrency(order.grandTotal)}</td>
+                    <td className="px-5 py-4">
+                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + paymentClass(order.paymentStatus)}>
+                        {order.paymentStatus}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + statusClass(order.status)}>
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.estimatedFinish}</td>
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdBy}</td>
+                    <td className="px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => alert("Detail order " + order.orderId + " akan dikembangkan di tahap berikutnya.")}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-all duration-300 hover:border-emerald-200 hover:bg-green-50 hover:text-emerald-600"
+                      >
+                        Detail
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            goToPage={goToPage}
+            getPageNumbers={getPageNumbers}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function CustomerPage({ refreshKey, onError, onRepeatOrder }) {
+    const [customers, setCustomers] = React.useState([]);
+    const [stats, setStats] = React.useState({
+      totalCustomers: 0,
+      repeatCustomers: 0,
+      newCustomers: 0,
+      topCustomerName: "-"
+    });
+    const [loading, setLoading] = React.useState(false);
+    const [search, setSearch] = React.useState("");
+    const [appliedSearch, setAppliedSearch] = React.useState("");
+    const [customerType, setCustomerType] = React.useState("all");
+    const [pageSize, setPageSize] = React.useState(10);
+    const [page, setPage] = React.useState(1);
+    const [totalRows, setTotalRows] = React.useState(0);
+    const [totalPages, setTotalPages] = React.useState(1);
+
+    React.useEffect(function() {
+      loadCustomers(false);
+    }, [page, pageSize, customerType, appliedSearch, refreshKey]);
+
+    function getCustomerCacheKey() {
+      return [
+        "laundryku_customer_cache",
+        page,
+        pageSize,
+        appliedSearch,
+        customerType,
+        refreshKey
+      ].join("_");
+    }
+
+    function loadCustomers(forceRefresh) {
+      const cacheKey = getCustomerCacheKey();
+
+      if (!forceRefresh) {
+        try {
+          const cachedResponse = sessionStorage.getItem(cacheKey);
+
+          if (cachedResponse) {
+            const parsedResponse = JSON.parse(cachedResponse);
+
+            if (parsedResponse && parsedResponse.success) {
+              setCustomers(parsedResponse.customers || []);
+              setStats(parsedResponse.stats || {
+                totalCustomers: 0,
+                repeatCustomers: 0,
+                newCustomers: 0,
+                topCustomerName: "-"
+              });
+              setPage(parsedResponse.page || 1);
+              setPageSize(parsedResponse.pageSize || 10);
+              setTotalRows(parsedResponse.totalRows || 0);
+              setTotalPages(parsedResponse.totalPages || 1);
+              return;
+            }
+          }
+        } catch (error) {
+          sessionStorage.removeItem(cacheKey);
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+
+          if (response && response.success) {
+            setCustomers(response.customers || []);
+            setStats(response.stats || {
+              totalCustomers: 0,
+              repeatCustomers: 0,
+              newCustomers: 0,
+              topCustomerName: "-"
+            });
+            setPage(response.page || 1);
+            setPageSize(response.pageSize || 10);
+            setTotalRows(response.totalRows || 0);
+            setTotalPages(response.totalPages || 1);
+
+            sessionStorage.setItem(cacheKey, JSON.stringify(response));
+          } else {
+            onError((response && response.message) || "Gagal mengambil data customer.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setLoading(false);
+          onError((error && error.message) || "Server error saat mengambil data customer.");
+        })
+        .getCustomersPage({
+          page: page,
+          pageSize: pageSize,
+          search: appliedSearch,
+          customerType: customerType
+        });
+    }
+
+    function applySearch(event) {
+      if (event && event.preventDefault) {
+        event.preventDefault();
+      }
+
+      setPage(1);
+      setAppliedSearch(search.trim());
+    }
+
+    function resetFilters() {
+      setSearch("");
+      setAppliedSearch("");
+      setCustomerType("all");
+      setPageSize(10);
+      setPage(1);
+    }
+
+    function goToPage(nextPage) {
+      if (nextPage < 1 || nextPage > totalPages || nextPage === page) {
+        return;
+      }
+
+      setPage(nextPage);
+    }
+
+    function getPageNumbers() {
+      return buildPageNumbers(page, totalPages);
+    }
+
+    function getCustomerTypeLabel(totalOrders) {
+      return Number(totalOrders || 0) > 1 ? "Repeat" : "New";
+    }
+
+    function getCustomerTypeClass(totalOrders) {
+      return Number(totalOrders || 0) > 1
+        ? "bg-purple-50 text-purple-600"
+        : "bg-emerald-50 text-emerald-600";
+    }
+
+    function openWhatsApp(whatsapp) {
+      var normalized = normalizeWhatsAppNumber(whatsapp);
+
+      if (!normalized) {
+        onError("Nomor WhatsApp customer belum valid.");
+        return;
+      }
+
+      window.open("https://wa.me/" + normalized, "_blank");
+    }
+
+    function normalizeWhatsAppNumber(value) {
+      var number = String(value || "").replace(/\D/g, "");
+
+      if (!number) return "";
+
+      if (number.indexOf("0") === 0) {
+        return "62" + number.slice(1);
+      }
+
+      if (number.indexOf("62") === 0) {
+        return number;
+      }
+
+      return number;
+    }
+
+    const firstRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+    const lastRow = Math.min(page * pageSize, totalRows);
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+              Customer Database
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">
+              Customer
+            </h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Database customer unik dari semua order, lengkap dengan repeat order dan shortcut WhatsApp.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => loadCustomers(true)}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+            >
+              <span className={"material-symbols-outlined text-[20px] " + (loading ? "spin" : "")}>
+                refresh
+              </span>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <StatCard icon="groups" iconClass="bg-emerald-600" title="Total Customer" value={String(stats.totalCustomers || 0)} note="customer tersimpan" />
+          <StatCard icon="repeat" iconClass="bg-purple-500" title="Repeat Customer" value={String(stats.repeatCustomers || 0)} note="lebih dari 1 order" />
+          <StatCard icon="person_add" iconClass="bg-lime-600" title="New Customer" value={String(stats.newCustomers || 0)} note="baru 1 kali order" />
+          <StatCard icon="workspace_premium" iconClass="bg-orange-400" title="Top Customer" value={stats.topCustomerName || "-"} note="order terbanyak" />
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_180px_140px_auto]">
+            <form onSubmit={applySearch} className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <span className="material-symbols-outlined text-[20px]">search</span>
+              </span>
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm font-bold outline-none transition-all duration-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                placeholder="Cari nama customer, WhatsApp, alamat..."
+              />
+            </form>
+
+            <select
+              value={customerType}
+              onChange={(event) => {
+                setPage(1);
+                setCustomerType(event.target.value);
+              }}
+              className="filter-select"
+            >
+              <option value="all">Semua Customer</option>
+              <option value="repeat">Repeat Customer</option>
+              <option value="new">New Customer</option>
+            </select>
+
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPage(1);
+                setPageSize(Number(event.target.value));
+              }}
+              className="filter-select"
+            >
+              <option value="10">Show 10</option>
+              <option value="20">Show 20</option>
+              <option value="50">Show 50</option>
+            </select>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={applySearch}
+                className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white transition-all duration-300 hover:bg-emerald-600"
+              >
+                Filter
+              </button>
+
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-500 transition-all duration-300 hover:bg-slate-50"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 p-5">
+            <div>
+              <h3 className="font-black text-slate-800">Semua Customer</h3>
+              <p className="mt-1 text-xs font-bold text-slate-400">
+                Menampilkan {firstRow}–{lastRow} dari {totalRows} customer
+              </p>
+            </div>
+
+            {loading && (
+              <div className="flex items-center gap-2 rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600">
+                <span className="material-symbols-outlined spin text-[16px]">progress_activity</span>
+                Loading
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left">
+              <thead>
+                <tr className="bg-slate-50/70 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="px-5 py-4">Customer ID</th>
+                  <th className="px-5 py-4">Customer</th>
+                  <th className="px-5 py-4">WhatsApp</th>
+                  <th className="px-5 py-4">Address</th>
+                  <th className="px-5 py-4">Type</th>
+                  <th className="px-5 py-4">Total Orders</th>
+                  <th className="px-5 py-4">Last Order</th>
+                  <th className="px-5 py-4">Created At</th>
+                  <th className="px-5 py-4"></th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {!loading && customers.length === 0 && (
+                  <tr>
+                    <td colSpan="9" className="px-5 py-14 text-center">
+                      <div className="mx-auto flex max-w-sm flex-col items-center">
+                        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+                          <span className="material-symbols-outlined text-[34px]">groups</span>
+                        </div>
+                        <p className="font-black text-slate-700">Belum ada data customer</p>
+                        <p className="mt-1 text-sm text-slate-400">Customer akan muncul otomatis setelah order disimpan.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
+                {customers.map((customer) => (
+                  <tr key={customer.customerId} className="group text-sm transition-all duration-300 hover:bg-slate-50">
+                    <td className="px-5 py-4 font-black text-emerald-600">
+                      {customer.customerId}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-emerald-100 bg-green-50 text-xs font-black text-emerald-600 transition-all duration-300 group-hover:scale-110">
+                          {getInitials(customer.customerName)}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-800">{customer.customerName}</p>
+                          <p className="text-xs text-slate-400">Customer profile</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">
+                      {customer.whatsapp}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <p className="max-w-[220px] truncate text-xs font-bold text-slate-500">
+                        {customer.address || "-"}
+                      </p>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + getCustomerTypeClass(customer.totalOrders)}>
+                        {getCustomerTypeLabel(customer.totalOrders)}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4 font-black text-slate-800">
+                      {customer.totalOrders}
+                    </td>
+
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">
+                      {customer.lastOrderId || "-"}
+                    </td>
+
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">
+                      {customer.createdAt}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onRepeatOrder({
+                              orderType: "repeat",
+                              customerName: customer.customerName,
+                              whatsapp: customer.whatsapp,
+                              address: customer.address || "",
+                              items: []
+                            })
+                          }
+                          className="rounded-lg border border-emerald-200 bg-green-50 px-3 py-2 text-xs font-black text-emerald-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-500 hover:text-white"
+                        >
+                          Repeat
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openWhatsApp(customer.whatsapp)}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-all duration-300 hover:border-green-200 hover:bg-green-50 hover:text-emerald-600"
+                        >
+                          WA
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => alert("Detail customer " + customer.customerName + " akan dikembangkan di tahap berikutnya.")}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-all duration-300 hover:border-emerald-200 hover:bg-green-50 hover:text-emerald-600"
+                        >
+                          Detail
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <TablePagination
+            page={page}
+            totalPages={totalPages}
+            goToPage={goToPage}
+            getPageNumbers={getPageNumbers}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  function buildPageNumbers(page, totalPages) {
+    var pages = [];
+
+    if (totalPages <= 5) {
+      for (var i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+
+      return pages;
+    }
+
+    var start = Math.max(page - 2, 1);
+    var end = Math.min(start + 4, totalPages);
+
+    if (end - start < 4) {
+      start = Math.max(end - 4, 1);
+    }
+
+    for (var j = start; j <= end; j++) {
+      pages.push(j);
+    }
+
+    return pages;
+  }
+
+  function getInitials(name) {
+    return String(name || "C")
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map(function(part) {
+        return part.charAt(0).toUpperCase();
+      })
+      .join("");
+  }
+
+  function TablePagination({ page, totalPages, goToPage, getPageNumbers }) {
+    const pageNumbers = getPageNumbers();
+
+    return (
+      <div className="flex flex-col gap-4 border-t border-slate-100 bg-slate-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
+        <p className="text-xs font-black text-slate-400">
+          Page {page} dari {totalPages}
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => goToPage(page - 1)}
+            className="pagination-control"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+          </button>
+
+          {pageNumbers[0] > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => goToPage(1)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs font-black text-slate-600 transition-all duration-300 hover:bg-slate-50"
+              >
+                1
+              </button>
+              <span className="px-1 text-xs font-black text-slate-400">...</span>
+            </>
+          )}
+
+          {pageNumbers.map(function(pageNumber) {
+            return (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() => goToPage(pageNumber)}
+                className={
+                  "flex h-8 w-8 items-center justify-center rounded-lg text-xs font-black transition-all duration-300 " +
+                  (page === pageNumber
+                    ? "bg-emerald-500 text-white"
+                    : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50")
+                }
+              >
+                {pageNumber}
+              </button>
+            );
+          })}
+
+          {pageNumbers[pageNumbers.length - 1] < totalPages && (
+            <>
+              <span className="px-1 text-xs font-black text-slate-400">...</span>
+              <button
+                type="button"
+                onClick={() => goToPage(totalPages)}
+                className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-xs font-black text-slate-600 transition-all duration-300 hover:bg-slate-50"
+              >
+                {totalPages}
+              </button>
+            </>
+          )}
+
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => goToPage(page + 1)}
+            className="pagination-control"
+          >
+            <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function ChartCard() {
+    return (
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <h3 className="font-black text-slate-800">Tren Order</h3>
+
+          <div className="flex flex-wrap gap-3">
+            <div className="flex overflow-hidden rounded-lg border border-slate-100 bg-slate-50 p-1">
+              <button className="rounded-md bg-white px-3 py-1 text-xs font-black text-emerald-500 shadow-sm transition-all duration-300 hover:scale-105">Harian</button>
+              <button className="px-3 py-1 text-xs font-black text-slate-400 transition-colors hover:text-slate-600">Mingguan</button>
+              <button className="px-3 py-1 text-xs font-black text-slate-400 transition-colors hover:text-slate-600">Bulanan</button>
+              <button className="px-3 py-1 text-xs font-black text-slate-400 transition-colors hover:text-slate-600">Tahunan</button>
+            </div>
+
+            <button className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-slate-600 transition-all duration-300 hover:bg-slate-50 hover:shadow-sm">
+              <span>7 Hari Terakhir</span>
+              <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-8 xl:flex-row">
+          <div className="chart-placeholder relative h-64 flex-1 rounded-2xl">
+            <div className="absolute inset-0 flex flex-col justify-between py-2 text-[10px] font-bold text-slate-300">
+              <div className="w-full border-b border-slate-100 pb-2">50</div>
+              <div className="w-full border-b border-slate-100 pb-2">40</div>
+              <div className="w-full border-b border-slate-100 pb-2">30</div>
+              <div className="w-full border-b border-slate-100 pb-2">20</div>
+              <div className="w-full border-b border-slate-100 pb-2">10</div>
+              <div className="w-full text-slate-300">0</div>
+            </div>
+
+            <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
+              <path
+                d="M0,180 L80,120 L160,80 L240,110 L320,80 L400,140 L480,100"
+                fill="none"
+                stroke="#10b981"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="3"
+              />
+              <circle cx="0" cy="180" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="80" cy="120" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="160" cy="80" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="240" cy="110" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="320" cy="80" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="400" cy="140" fill="white" r="4" stroke="#10b981" strokeWidth="2" />
+              <circle cx="480" cy="100" fill="#10b981" r="4" />
+            </svg>
+
+            <div className="absolute left-[70%] top-[60px] z-10 rounded-lg bg-slate-800 p-2 text-[10px] text-white shadow-xl transition-all duration-300 hover:-translate-y-1 hover:scale-105">
+              <p className="opacity-70">22 Mei</p>
+              <p className="text-xs font-black">28 Order</p>
+            </div>
+
+            <div className="absolute bottom-[-30px] flex w-full justify-between text-[10px] font-black text-slate-400">
+              <span>16 Mei</span>
+              <span>17 Mei</span>
+              <span>18 Mei</span>
+              <span>19 Mei</span>
+              <span>20 Mei</span>
+              <span>21 Mei</span>
+              <span>22 Mei</span>
+            </div>
+
+            <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center opacity-[0.03]">
+              <span className="text-9xl font-black">MJ</span>
+            </div>
+          </div>
+
+          <div className="w-full xl:w-64">
+            <h4 className="mb-6 text-sm font-black text-slate-800">Distribusi Status Order</h4>
+
+            <div className="relative mb-6 flex justify-center">
+              <div className="flex h-40 w-40 items-center justify-center rounded-full bg-[conic-gradient(#cbd5e1_0%_21%,#3b82f6_21%_64%,#10b981_64%_89%,#84cc16_89%_100%)] transition-all duration-500 hover:rotate-6 hover:scale-105">
+                <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-inner">
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-slate-800">28</p>
+                    <p className="text-[10px] font-black uppercase text-slate-400">Total Order</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <LegendItem color="bg-slate-300" label="Baru" value="6 (21%)" />
+              <LegendItem color="bg-blue-500" label="Diproses" value="12 (43%)" />
+              <LegendItem color="bg-emerald-500" label="Selesai" value="7 (25%)" />
+              <LegendItem color="bg-lime-500" label="Diambil" value="3 (11%)" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function QuickInputCard({ services, createdBy, onQuickSave }) {
+    const defaultService = services && services.length ? services[0] : null;
+    const [whatsapp, setWhatsapp] = React.useState("0812 3456 7890");
+    const [customerName, setCustomerName] = React.useState("Budi Santoso");
+    const [serviceId, setServiceId] = React.useState(defaultService ? defaultService.id : "");
+    const [qty, setQty] = React.useState(3);
+    const [estimatedFinish, setEstimatedFinish] = React.useState("23 Mei 2024 17:00");
+
+    React.useEffect(function() {
+      if (!serviceId && services && services.length) {
+        setServiceId(services[0].id);
+      }
+    }, [services.length]);
+
+    const selectedService = services.find(function(service) {
+      return service.id === serviceId;
+    }) || defaultService;
+
+    const total = selectedService ? Number(selectedService.price || 0) * Number(qty || 0) : 0;
+
+    function submitQuickOrder() {
+      if (!selectedService) return;
+
+      onQuickSave({
+        orderType: "new",
+        customerName: customerName,
+        whatsapp: whatsapp,
+        address: "",
+        paymentStatus: "Belum Dibayar",
+        paymentMethod: "Cash",
+        estimatedFinish: estimatedFinish,
+        discount: 0,
+        additionalFee: 0,
+        paidAmount: 0,
+        notes: "Dibuat dari Input Order Cepat",
+        createdBy: createdBy,
+        items: [
+          {
+            serviceId: selectedService.id,
+            category: selectedService.category,
+            serviceName: selectedService.name,
+            unit: selectedService.unit,
+            price: selectedService.price,
+            qty: qty
+          }
+        ]
+      });
+    }
+
+    return (
+      <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="flex items-center gap-2 bg-emerald-500 p-4 text-white">
+          <span className="material-symbols-outlined text-[22px]">bolt</span>
+          <h3 className="font-black">Input Order Cepat</h3>
+        </div>
+
+        <div className="flex-1 space-y-4 p-6">
+          <div className="grid grid-cols-2 gap-4">
+            <SmallField label="No. WA">
+              <input className="quick-input" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} />
+            </SmallField>
+
+            <SmallField label="Nama Customer">
+              <input className="quick-input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+            </SmallField>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <SmallField label="Layanan">
+              <select className="quick-input" value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
+                {services.map((service) => (
+                  <option key={service.id} value={service.id}>
+                    {service.name}
+                  </option>
+                ))}
+              </select>
+            </SmallField>
+
+            <SmallField label="Berat / Qty">
+              <div className="flex items-center gap-2">
+                <input className="quick-input" type="number" value={qty} onChange={(event) => setQty(event.target.value)} />
+                <span className="text-xs font-black text-slate-400">
+                  {selectedService ? selectedService.unit : "kg"}
+                </span>
+              </div>
+            </SmallField>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <SmallField label="Total">
+              <input className="quick-input font-black text-emerald-600" value={"Rp " + Number(total || 0).toLocaleString("id-ID")} readOnly />
+            </SmallField>
+
+            <SmallField label="Estimasi Selesai">
+              <input className="quick-input" value={estimatedFinish} onChange={(event) => setEstimatedFinish(event.target.value)} />
+            </SmallField>
+          </div>
+        </div>
+
+        <div className="p-6 pt-0">
+          <button
+            type="button"
+            onClick={submitQuickOrder}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[20px]">save</span>
+            <span>Simpan Order</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function OrdersTable({ orders, getStatusClass, getPaymentClass, onOpenDataOrder }) {
+    return (
+      <div className="flex flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl lg:col-span-3">
+        <div className="flex items-center justify-between border-b border-slate-100 p-6">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[22px] text-slate-400">assignment</span>
+            <h3 className="font-black text-slate-800">Order Terbaru</h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={onOpenDataOrder}
+            className="flex items-center gap-1 text-xs font-black text-emerald-500 transition-all duration-300 hover:translate-x-1 hover:underline"
+          >
+            <span>Lihat Semua</span>
+            <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/50 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                <th className="px-6 py-4">ID Order</th>
+                <th className="px-6 py-4">Customer</th>
+                <th className="px-6 py-4">Layanan</th>
+                <th className="px-6 py-4">Total</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4">Bayar</th>
+                <th className="px-6 py-4">Estimasi</th>
+                <th className="px-6 py-4"></th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {orders.map((order) => (
+                <tr key={order.id} className="group text-sm transition-all duration-300 hover:bg-slate-50">
+                  <td className="px-6 py-4 font-black text-emerald-500 transition-all duration-300 group-hover:translate-x-1">
+                    {order.id}
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-lg bg-green-50 p-1.5 transition-all duration-300 group-hover:scale-110 group-hover:bg-emerald-100">
+                        <span className="material-symbols-outlined text-[18px] text-emerald-500">call</span>
+                      </div>
+
+                      <div>
+                        <p className="font-black text-slate-800">{order.customer}</p>
+                        <p className="text-xs text-slate-400">{order.phone}</p>
+                      </div>
+                    </div>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <p className="font-black text-slate-600">{order.service}</p>
+                    <p className="text-xs text-slate-400">{order.qty}</p>
+                  </td>
+
+                  <td className="px-6 py-4 font-black text-slate-800">{order.total}</td>
+
+                  <td className="px-6 py-4">
+                    <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + getStatusClass(order.status)}>
+                      {order.status}
+                    </span>
+                  </td>
+
+                  <td className="px-6 py-4">
+                    <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + getPaymentClass(order.payment)}>
+                      {order.payment}
+                    </span>
+                  </td>
+
+                  <td className="px-6 py-4 text-xs font-black text-slate-500">{order.estimate}</td>
+
+                  <td className="px-6 py-4">
+                    <button className="p-1 text-slate-400 transition-all duration-300 hover:scale-110 hover:text-slate-600">
+                      <span className="material-symbols-outlined text-[22px]">more_vert</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-4">
+          <p className="text-xs font-black text-slate-400">Menampilkan 1–5 dari 28 order</p>
+
+          <div className="flex items-center gap-2">
+            <PaginationButton icon="chevron_left" />
+            <button className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-xs font-black text-white">1</button>
+            <PaginationButton label="2" />
+            <PaginationButton label="3" />
+            <span className="text-xs text-slate-400">...</span>
+            <PaginationButton label="6" />
+            <PaginationButton icon="chevron_right" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  function LayananHargaPage({ onError, onServicesChanged }) {
+    const emptyForm = {
+      serviceId: "",
+      category: "Kiloan",
+      serviceName: "",
+      unit: "kg",
+      price: 0,
+      active: true
+    };
+
+    const [services, setServices] = React.useState([]);
+    const [stats, setStats] = React.useState({
+      totalServices: 0,
+      activeServices: 0,
+      inactiveServices: 0,
+      totalCategories: 0,
+      cheapestName: "-",
+      cheapestPrice: 0,
+      highestName: "-",
+      highestPrice: 0
+    });
+    const [categories, setCategories] = React.useState([]);
+    const [loading, setLoading] = React.useState(false);
+    const [saving, setSaving] = React.useState(false);
+    const [search, setSearch] = React.useState("");
+    const [appliedSearch, setAppliedSearch] = React.useState("");
+    const [category, setCategory] = React.useState("all");
+    const [status, setStatus] = React.useState("all");
+    const [modalOpen, setModalOpen] = React.useState(false);
+    const [editingService, setEditingService] = React.useState(null);
+    const [form, setForm] = React.useState(emptyForm);
+
+    React.useEffect(function() {
+      loadServices(false);
+    }, [appliedSearch, category, status]);
+
+    function getServicesCacheKey() {
+      return [LAUNDRYKU_CACHE.SERVICES_PAGE, appliedSearch, category, status].join("_");
+    }
+
+    function applyServicesResponse(response) {
+      setServices(response.services || []);
+      setStats(response.stats || stats);
+      setCategories(response.categories || []);
+    }
+
+    function loadServices(forceRefresh) {
+      const cacheKey = getServicesCacheKey();
+
+      if (!forceRefresh) {
+        const cachedResponse = readSessionCache(cacheKey);
+        if (cachedResponse && cachedResponse.success) {
+          applyServicesResponse(cachedResponse);
+          return;
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+
+          if (response && response.success) {
+            applyServicesResponse(response);
+            writeSessionCache(cacheKey, response);
+          } else {
+            onError((response && response.message) || "Gagal mengambil data layanan.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setLoading(false);
+          onError((error && error.message) || "Server error saat mengambil layanan.");
+        })
+        .getServicesPage({
+          search: appliedSearch,
+          category: category,
+          status: status
+        });
+    }
+
+    function applySearch(event) {
+      if (event && event.preventDefault) {
+        event.preventDefault();
+      }
+
+      setAppliedSearch(search.trim());
+    }
+
+    function resetFilters() {
+      setSearch("");
+      setAppliedSearch("");
+      setCategory("all");
+      setStatus("all");
+    }
+
+    function openAddModal() {
+      setEditingService(null);
+      setForm(emptyForm);
+      setModalOpen(true);
+    }
+
+    function openEditModal(service) {
+      setEditingService(service);
+      setForm({
+        serviceId: service.id || service.serviceId || "",
+        category: service.category || "",
+        serviceName: service.name || service.serviceName || "",
+        unit: service.unit || "",
+        price: Number(service.price || 0),
+        active: service.active === true
+      });
+      setModalOpen(true);
+    }
+
+    function updateForm(field, value) {
+      setForm(Object.assign({}, form, { [field]: value }));
+    }
+
+    function closeModal() {
+      if (saving) return;
+      setModalOpen(false);
+      setEditingService(null);
+      setForm(emptyForm);
+    }
+
+    function submitService(event) {
+      event.preventDefault();
+
+      if (!form.serviceId.trim()) {
+        onError("Service ID wajib diisi.");
+        return;
+      }
+
+      if (!form.category.trim()) {
+        onError("Kategori wajib diisi.");
+        return;
+      }
+
+      if (!form.serviceName.trim()) {
+        onError("Nama layanan wajib diisi.");
+        return;
+      }
+
+      if (!form.unit.trim()) {
+        onError("Unit wajib diisi.");
+        return;
+      }
+
+      if (Number(form.price || 0) < 0) {
+        onError("Harga tidak boleh negatif.");
+        return;
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      const payload = {
+        serviceId: form.serviceId.trim().toUpperCase(),
+        category: form.category.trim(),
+        serviceName: form.serviceName.trim(),
+        unit: form.unit.trim(),
+        price: Number(form.price || 0),
+        active: form.active === true
+      };
+
+      setSaving(true);
+
+      const runner = google.script.run
+        .withSuccessHandler(function(response) {
+          setSaving(false);
+
+          if (response && response.success) {
+            closeModal();
+            clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SERVICES_PAGE]);
+            loadServices(true);
+            onServicesChanged(response.message || "Data layanan berhasil diperbarui.");
+          } else {
+            onError((response && response.message) || "Gagal menyimpan layanan.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setSaving(false);
+          onError((error && error.message) || "Server error saat menyimpan layanan.");
+        });
+
+      if (editingService) {
+        runner.updateService(payload);
+      } else {
+        runner.saveService(payload);
+      }
+    }
+
+    function toggleService(service) {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        return;
+      }
+
+      const nextActive = !service.active;
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+
+          if (response && response.success) {
+            clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SERVICES_PAGE]);
+            loadServices(true);
+            onServicesChanged(response.message || "Status layanan berhasil diperbarui.");
+          } else {
+            onError((response && response.message) || "Gagal mengubah status layanan.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setLoading(false);
+          onError((error && error.message) || "Server error saat mengubah status layanan.");
+        })
+        .setServiceActive({
+          serviceId: service.id,
+          active: nextActive
+        });
+    }
+
+    function formatCurrency(value) {
+      return "Rp " + Number(value || 0).toLocaleString("id-ID");
+    }
+
+    function statusClass(active) {
+      return active ? "bg-green-50 text-emerald-600" : "bg-slate-100 text-slate-500";
+    }
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+              Master Data
+            </p>
+            <h2 className="mt-1 text-2xl font-black text-slate-800">
+              Layanan & Harga
+            </h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Kelola katalog layanan dari sheet Services. Harga baru berlaku untuk order baru, sedangkan order lama tetap memakai harga tersimpan.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => loadServices(true)}
+              className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-md"
+            >
+              <span className={"material-symbols-outlined text-[20px] " + (loading ? "spin" : "")}>
+                refresh
+              </span>
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              onClick={openAddModal}
+              className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-xl"
+            >
+              <span className="material-symbols-outlined text-[20px]">add</span>
+              Tambah Layanan
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <StatCard icon="sell" iconClass="bg-emerald-600" title="Total Layanan" value={String(stats.totalServices || 0)} note="semua layanan" />
+          <StatCard icon="toggle_on" iconClass="bg-green-600" title="Layanan Aktif" value={String(stats.activeServices || 0)} note="muncul di order" />
+          <StatCard icon="toggle_off" iconClass="bg-slate-500" title="Nonaktif" value={String(stats.inactiveServices || 0)} note="disembunyikan" />
+          <StatCard icon="category" iconClass="bg-lime-600" title="Kategori" value={String(stats.totalCategories || 0)} note="kategori layanan" />
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_180px_160px_auto]">
+            <form onSubmit={applySearch} className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                <span className="material-symbols-outlined text-[20px]">search</span>
+              </span>
+
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm font-bold outline-none transition-all duration-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                placeholder="Cari ID, kategori, nama layanan, unit..."
+              />
+            </form>
+
+            <select
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              className="filter-select"
+            >
+              <option value="all">Semua Kategori</option>
+              {categories.map((item) => (
+                <option key={item} value={item}>{item}</option>
+              ))}
+            </select>
+
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className="filter-select"
+            >
+              <option value="all">Semua Status</option>
+              <option value="active">Aktif</option>
+              <option value="inactive">Nonaktif</option>
+            </select>
+
+            <div className="flex gap-2">
+              <button type="button" onClick={applySearch} className="flex-1 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white transition-all duration-300 hover:bg-emerald-600">
+                Filter
+              </button>
+
+              <button type="button" onClick={resetFilters} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-500 transition-all duration-300 hover:bg-slate-50">
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-100 p-5">
+            <div>
+              <h3 className="font-black text-slate-800">Daftar Layanan</h3>
+              <p className="mt-1 text-xs font-bold text-slate-400">
+                Menampilkan {services.length} layanan dari Google Sheets
+              </p>
+            </div>
+
+            {loading && (
+              <div className="flex items-center gap-2 rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600">
+                <span className="material-symbols-outlined spin text-[16px]">progress_activity</span>
+                Loading
+              </div>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left">
+              <thead>
+                <tr className="bg-slate-50/70 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  <th className="px-5 py-4">Service ID</th>
+                  <th className="px-5 py-4">Kategori</th>
+                  <th className="px-5 py-4">Nama Layanan</th>
+                  <th className="px-5 py-4">Unit</th>
+                  <th className="px-5 py-4">Harga</th>
+                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4"></th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {!loading && services.length === 0 && (
+                  <tr>
+                    <td colSpan="7" className="px-5 py-14 text-center">
+                      <div className="mx-auto flex max-w-sm flex-col items-center">
+                        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+                          <span className="material-symbols-outlined text-[34px]">sell</span>
+                        </div>
+                        <p className="font-black text-slate-700">Belum ada data layanan</p>
+                        <p className="mt-1 text-sm text-slate-400">Tambah layanan baru atau ubah filter pencarian.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
+                {services.map((service) => (
+                  <tr key={service.id} className="group text-sm transition-all duration-300 hover:bg-slate-50">
+                    <td className="px-5 py-4 font-black text-emerald-600">{service.id}</td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-600">
+                        {service.category || "-"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-black text-slate-800">{service.name}</p>
+                      <p className="mt-1 text-xs font-bold text-slate-400">
+                        Berlaku untuk order baru setelah disimpan
+                      </p>
+                    </td>
+                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{service.unit}</td>
+                    <td className="px-5 py-4 font-black text-slate-800">{formatCurrency(service.price)}</td>
+                    <td className="px-5 py-4">
+                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + statusClass(service.active)}>
+                        {service.active ? "Aktif" : "Nonaktif"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(service)}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-all duration-300 hover:border-emerald-200 hover:bg-green-50 hover:text-emerald-600"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleService(service)}
+                          className={
+                            "rounded-lg border px-3 py-2 text-xs font-black transition-all duration-300 hover:-translate-y-0.5 " +
+                            (service.active
+                              ? "border-red-100 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white"
+                              : "border-emerald-200 bg-green-50 text-emerald-600 hover:bg-emerald-500 hover:text-white")
+                          }
+                        >
+                          {service.active ? "Nonaktifkan" : "Aktifkan"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-emerald-200 bg-green-50 p-5 text-sm font-medium leading-relaxed text-slate-600">
+          <p className="font-black text-emerald-700">Catatan harga</p>
+          <p className="mt-1">
+            Perubahan harga hanya memengaruhi order baru. Order lama tetap aman karena harga layanan sudah disimpan di sheet OrderItems saat order dibuat.
+          </p>
+        </div>
+
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl animate-[fadeIn_.25s_ease-out]">
+              <div className="flex items-center justify-between border-b border-slate-100 p-6">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+                    {editingService ? "Edit Layanan" : "Tambah Layanan"}
+                  </p>
+                  <h3 className="mt-1 text-xl font-black text-slate-800">
+                    {editingService ? form.serviceId : "Layanan Baru"}
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-all duration-300 hover:bg-slate-50"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+
+              <form onSubmit={submitService} className="space-y-5 p-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <FormField label="Service ID">
+                    <input
+                      className="form-input uppercase disabled:bg-slate-100 disabled:text-slate-400"
+                      value={form.serviceId}
+                      onChange={(event) => updateForm("serviceId", event.target.value.toUpperCase())}
+                      disabled={!!editingService}
+                      placeholder="Contoh: CKL"
+                    />
+                  </FormField>
+
+                  <FormField label="Kategori">
+                    <input
+                      className="form-input"
+                      value={form.category}
+                      onChange={(event) => updateForm("category", event.target.value)}
+                      placeholder="Kiloan / Satuan / Express"
+                    />
+                  </FormField>
+
+                  <FormField label="Nama Layanan">
+                    <input
+                      className="form-input"
+                      value={form.serviceName}
+                      onChange={(event) => updateForm("serviceName", event.target.value)}
+                      placeholder="Contoh: Cuci Kering Lipat"
+                    />
+                  </FormField>
+
+                  <FormField label="Unit">
+                    <input
+                      className="form-input"
+                      value={form.unit}
+                      onChange={(event) => updateForm("unit", event.target.value)}
+                      placeholder="kg / pcs"
+                    />
+                  </FormField>
+
+                  <FormField label="Harga">
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      value={form.price}
+                      onChange={(event) => updateForm("price", event.target.value)}
+                    />
+                  </FormField>
+
+                  <FormField label="Status">
+                    <select
+                      className="form-input"
+                      value={form.active ? "active" : "inactive"}
+                      onChange={(event) => updateForm("active", event.target.value === "active")}
+                    >
+                      <option value="active">Aktif</option>
+                      <option value="inactive">Nonaktif</option>
+                    </select>
+                  </FormField>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm font-medium text-slate-500">
+                  Preview: <span className="font-black text-slate-700">{form.category || "Kategori"} - {form.serviceName || "Nama Layanan"}</span> / <span className="font-black text-emerald-600">{formatCurrency(form.price)} per {form.unit || "unit"}</span>
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600 transition-all duration-300 hover:bg-slate-50"
+                  >
+                    Batal
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <span className={"material-symbols-outlined text-[20px] " + (saving ? "spin" : "")}>
+                      {saving ? "progress_activity" : "save"}
+                    </span>
+                    {saving ? "Menyimpan..." : "Simpan Layanan"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
+  function PengeluaranPage({ user, onError, onSaved }) {
+    const defaultCategories = ["Sabun & Chemical", "Packaging", "Maintenance", "Sewa Ruko", "Listrik", "Air", "Gaji", "Transport", "Internet / Pulsa", "Lain-lain"];
+    const defaultPaymentMethods = ["Cash", "Transfer", "QRIS", "Debit/Kartu", "E-Wallet", "Lainnya"];
+    const [expenses, setExpenses] = React.useState([]);
+    const [stats, setStats] = React.useState({ totalTransactions: 0, totalAmount: 0, todayAmount: 0, monthAmount: 0, topCategoryName: "-", topCategoryAmount: 0, dailySeries: [], categorySeries: [] });
+    const [categories, setCategories] = React.useState(defaultCategories);
+    const [paymentMethods, setPaymentMethods] = React.useState(defaultPaymentMethods);
+    const [loading, setLoading] = React.useState(false);
+    const [search, setSearch] = React.useState("");
+    const [appliedSearch, setAppliedSearch] = React.useState("");
+    const [category, setCategory] = React.useState("all");
+    const [paymentMethod, setPaymentMethod] = React.useState("all");
+    const [pageSize, setPageSize] = React.useState(10);
+    const [page, setPage] = React.useState(1);
+    const [totalRows, setTotalRows] = React.useState(0);
+    const [totalPages, setTotalPages] = React.useState(1);
+    const [modalOpen, setModalOpen] = React.useState(false);
+    const [editingExpense, setEditingExpense] = React.useState(null);
+    const [saving, setSaving] = React.useState(false);
+    const [form, setForm] = React.useState(getDefaultForm());
+
+    React.useEffect(function() { loadExpenses(false); }, [page, pageSize, category, paymentMethod, appliedSearch]);
+
+    function getTodayInput() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    }
+    function getDefaultForm() { return { expenseId: "", date: getTodayInput(), category: defaultCategories[0], description: "", amount: "", paymentMethod: defaultPaymentMethods[0], vendor: "", notes: "" }; }
+    function mergeOptions(base, dynamic) { const map = {}; return base.concat(dynamic || []).filter((item) => { const value = String(item || "").trim(); if (!value || map[value]) return false; map[value] = true; return true; }); }
+    function formatCurrency(value) { return "Rp " + Number(value || 0).toLocaleString("id-ID"); }
+
+    function getExpenseCacheKey() {
+      return [LAUNDRYKU_CACHE.EXPENSE, page, pageSize, appliedSearch, category, paymentMethod].join("_");
+    }
+
+    function applyExpenseResponse(response) {
+      setExpenses(response.expenses || []);
+      setStats(response.stats || stats);
+      setCategories(mergeOptions(defaultCategories, response.categories || []));
+      setPaymentMethods(mergeOptions(defaultPaymentMethods, response.paymentMethods || []));
+      setPage(response.page || 1);
+      setPageSize(response.pageSize || 10);
+      setTotalRows(response.totalRows || 0);
+      setTotalPages(response.totalPages || 1);
+    }
+
+    function loadExpenses(forceRefresh) {
+      const cacheKey = getExpenseCacheKey();
+      if (!forceRefresh) {
+        const cachedResponse = readSessionCache(cacheKey);
+        if (cachedResponse && cachedResponse.success) {
+          applyExpenseResponse(cachedResponse);
+          return;
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl."); return; }
+      setLoading(true);
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setLoading(false);
+          if (response && response.success) {
+            applyExpenseResponse(response);
+            writeSessionCache(cacheKey, response);
+          } else { onError((response && response.message) || "Gagal mengambil pengeluaran."); }
+        })
+        .withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); })
+        .getExpensesPage({ page, pageSize, search: appliedSearch, category, paymentMethod });
+    }
+    function applySearch(event) { if (event && event.preventDefault) event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); }
+    function resetFilters() { setSearch(""); setAppliedSearch(""); setCategory("all"); setPaymentMethod("all"); setPageSize(10); setPage(1); }
+    function openAddModal() { setEditingExpense(null); setForm(getDefaultForm()); setModalOpen(true); }
+    function openEditModal(expense) { setEditingExpense(expense); setForm({ expenseId: expense.expenseId, date: expense.dateInput || getTodayInput(), category: expense.category || "", description: expense.description || "", amount: String(expense.amount || 0), paymentMethod: expense.paymentMethod || defaultPaymentMethods[0], vendor: expense.vendor || "", notes: expense.notes || "" }); setModalOpen(true); }
+    function updateForm(field, value) { setForm(Object.assign({}, form, { [field]: value })); }
+    function closeModal() { setModalOpen(false); setSaving(false); setEditingExpense(null); setForm(getDefaultForm()); }
+    function submitExpense(event) {
+      event.preventDefault();
+      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; }
+      const payload = Object.assign({}, form, { amount: Number(form.amount || 0), createdBy: user && user.name ? user.name : "Administrator" });
+      setSaving(true);
+      const runner = google.script.run.withSuccessHandler(function(response) { setSaving(false); if (response && response.success) { closeModal(); clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.EXPENSE]); onSaved(response.message); loadExpenses(true); } else { onError((response && response.message) || "Gagal menyimpan pengeluaran."); } }).withFailureHandler(function(error) { setSaving(false); onError((error && error.message) || "Server error."); });
+      if (editingExpense) runner.updateExpense(payload); else runner.saveExpense(payload);
+    }
+    function removeExpense(expense) { if (!window.confirm("Hapus pengeluaran " + expense.expenseId + "?")) return; google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.EXPENSE]); onSaved(response.message); loadExpenses(true); } else { onError((response && response.message) || "Gagal menghapus."); } }).withFailureHandler(function(error) { onError((error && error.message) || "Server error."); }).deleteExpense({ expenseId: expense.expenseId }); }
+    function goToPage(nextPage) { if (nextPage < 1 || nextPage > totalPages || nextPage === page) return; setPage(nextPage); }
+    function getPageNumbers() { return buildPageNumbers(page, totalPages); }
+    const firstRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1; const lastRow = Math.min(page * pageSize, totalRows);
+
+    return (
+      <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
+        <PageHeader eyebrow="Operational Cost" title="Pengeluaran" description="Catat dan rekap biaya operasional laundry lengkap dengan grafik harian dan distribusi kategori." actionLabel="Tambah Pengeluaran" actionIcon="add" onAction={openAddModal} loading={loading} onRefresh={() => loadExpenses(true)} />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <StatCard icon="receipt_long" iconClass="bg-green-800" title="Bulan Ini" value={formatCurrency(stats.monthAmount)} note="pengeluaran bulan ini" />
+          <StatCard icon="today" iconClass="bg-green-600" title="Hari Ini" value={formatCurrency(stats.todayAmount)} note="pengeluaran hari ini" />
+          <StatCard icon="category" iconClass="bg-lime-600" title="Kategori Terbesar" value={stats.topCategoryName || "-"} note={formatCurrency(stats.topCategoryAmount)} />
+          <StatCard icon="payments" iconClass="bg-orange-400" title="Total Transaksi" value={String(stats.totalTransactions || 0)} note={formatCurrency(stats.totalAmount)} />
+        </div>
+        <SimpleBars title="Grafik Pengeluaran 7 Hari" data={stats.dailySeries || []} valueKey="expense" formatCurrency={formatCurrency} />
+        <FilterBar search={search} setSearch={setSearch} onSearch={applySearch} onReset={resetFilters} selects={[{value: category, setValue: setCategory, options: ["all"].concat(categories), labels: {all: "Semua Kategori"}}, {value: paymentMethod, setValue: setPaymentMethod, options: ["all"].concat(paymentMethods), labels: {all: "Semua Metode"}}, {value: String(pageSize), setValue: (v) => setPageSize(Number(v)), options: ["10", "20", "50"], labels: {"10": "Show 10", "20": "Show 20", "50": "Show 50"}}]} />
+        <DataTable title="Semua Pengeluaran" subtitle={`Menampilkan ${firstRow}-${lastRow} dari ${totalRows} transaksi`} loading={loading} columns={["Expense ID", "Tanggal", "Kategori", "Deskripsi", "Nominal", "Metode", "Vendor", "Aksi"]}>
+          {expenses.length === 0 && <tr><td colSpan="8" className="px-5 py-12 text-center text-sm font-bold text-slate-400">Belum ada data pengeluaran.</td></tr>}
+          {expenses.map((expense) => <tr key={expense.expenseId} className="text-sm hover:bg-slate-50"><td className="px-5 py-4 font-black text-emerald-600">{expense.expenseId}</td><td className="px-5 py-4 text-xs font-bold text-slate-500">{expense.date}</td><td className="px-5 py-4"><span className="rounded-full bg-green-50 px-2.5 py-1 text-[10px] font-black uppercase text-emerald-600">{expense.category}</span></td><td className="px-5 py-4"><p className="font-black text-slate-800">{expense.description}</p><p className="max-w-[240px] truncate text-xs text-slate-400">{expense.notes || "-"}</p></td><td className="px-5 py-4 font-black text-slate-800">{formatCurrency(expense.amount)}</td><td className="px-5 py-4 text-xs font-bold text-slate-500">{expense.paymentMethod}</td><td className="px-5 py-4 text-xs font-bold text-slate-500">{expense.vendor || "-"}</td><td className="px-5 py-4"><div className="flex gap-2"><button onClick={() => openEditModal(expense)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 hover:bg-green-50">Edit</button><button onClick={() => removeExpense(expense)} className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-500 hover:bg-red-500 hover:text-white">Hapus</button></div></td></tr>)}
+        </DataTable>
+        <TablePagination page={page} totalPages={totalPages} goToPage={goToPage} getPageNumbers={getPageNumbers} />
+        {modalOpen && <Modal title={editingExpense ? "Edit Pengeluaran" : "Tambah Pengeluaran"} subtitle={editingExpense ? form.expenseId : "Pengeluaran Baru"} onClose={closeModal}><form onSubmit={submitExpense} className="space-y-5"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><FormField label="Tanggal"><input type="date" className="form-input" value={form.date} onChange={(e) => updateForm("date", e.target.value)} /></FormField><FormField label="Kategori"><input className="form-input" value={form.category} onChange={(e) => updateForm("category", e.target.value)} /></FormField><div className="md:col-span-2"><FormField label="Deskripsi"><input className="form-input" value={form.description} onChange={(e) => updateForm("description", e.target.value)} /></FormField></div><FormField label="Nominal"><input type="number" min="0" className="form-input" value={form.amount} onChange={(e) => updateForm("amount", e.target.value)} /></FormField><FormField label="Metode Pembayaran"><select className="form-input" value={form.paymentMethod} onChange={(e) => updateForm("paymentMethod", e.target.value)}>{paymentMethods.map((m) => <option key={m}>{m}</option>)}</select></FormField><FormField label="Vendor"><input className="form-input" value={form.vendor} onChange={(e) => updateForm("vendor", e.target.value)} /></FormField><div className="md:col-span-2"><FormField label="Catatan"><textarea className="form-input min-h-[90px] resize-none" value={form.notes} onChange={(e) => updateForm("notes", e.target.value)}></textarea></FormField></div></div><ModalActions saving={saving} onCancel={closeModal} submitLabel={editingExpense ? "Update Pengeluaran" : "Simpan Pengeluaran"} /></form></Modal>}
+      </div>
+    );
+  }
+
+  function LaporanPage({ onError }) {
+    const [period, setPeriod] = React.useState("month");
+    const [startDate, setStartDate] = React.useState("");
+    const [endDate, setEndDate] = React.useState("");
+    const [loading, setLoading] = React.useState(false);
+    const [report, setReport] = React.useState({ summary: {}, incomeExpenseSeries: [], orderStatusBreakdown: [], paymentStatusBreakdown: [], topServices: [], topExpenseCategories: [] });
+    React.useEffect(function() { loadReport(false); }, [period]);
+    function formatCurrency(value) { return "Rp " + Number(value || 0).toLocaleString("id-ID"); }
+    function getReportCacheKey() { return [LAUNDRYKU_CACHE.REPORT, period, startDate, endDate].join("_"); }
+    function loadReport(forceRefresh) { const cacheKey = getReportCacheKey(); if (!forceRefresh) { const cachedResponse = readSessionCache(cacheKey); if (cachedResponse && cachedResponse.success) { setReport(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { setReport(response); writeSessionCache(cacheKey, response); } else onError((response && response.message) || "Gagal mengambil laporan."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getReportsSummary({ period, startDate, endDate }); }
+    const s = report.summary || {};
+    return <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6"><PageHeader eyebrow="Business Report" title="Laporan" description="Income, expense, cashflow, profit, top services, dan top expense dalam satu halaman." actionLabel="Refresh Laporan" actionIcon="refresh" onAction={() => loadReport(true)} loading={loading} /><div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid grid-cols-1 gap-4 md:grid-cols-[200px_1fr_1fr_auto]"><select className="filter-select" value={period} onChange={(e) => setPeriod(e.target.value)}><option value="today">Hari Ini</option><option value="7days">7 Hari Terakhir</option><option value="month">Bulan Ini</option><option value="lastMonth">Bulan Lalu</option><option value="custom">Custom</option></select><input type="date" className="form-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={period !== "custom"} /><input type="date" className="form-input" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={period !== "custom"} /><button onClick={() => loadReport(true)} className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Terapkan</button></div></div><div className="grid grid-cols-1 gap-4 md:grid-cols-4"><StatCard icon="payments" iconClass="bg-emerald-600" title="Total Omzet" value={formatCurrency(s.totalRevenue)} note={`${s.totalOrders || 0} order`} /><StatCard icon="account_balance_wallet" iconClass="bg-orange-400" title="Pengeluaran" value={formatCurrency(s.totalExpense)} note={`${s.totalExpenses || 0} transaksi`} /><StatCard icon="trending_up" iconClass="bg-green-800" title="Profit by Omzet" value={formatCurrency(s.netProfitByRevenue)} note={`${Number(s.profitMarginRevenue || 0).toFixed(1)}% margin`} /><StatCard icon="savings" iconClass="bg-lime-600" title="Profit by Cash" value={formatCurrency(s.netProfitByCash)} note={`${Number(s.profitMarginCash || 0).toFixed(1)}% margin`} /></div><div className="grid grid-cols-1 gap-4 md:grid-cols-3"><StatCard icon="paid" iconClass="bg-green-600" title="Cash Masuk" value={formatCurrency(s.totalPaid)} note="paid amount" /><StatCard icon="hourglass_bottom" iconClass="bg-red-400" title="Belum Dibayar" value={formatCurrency(s.totalRemaining)} note="remaining amount" /><StatCard icon="summarize" iconClass="bg-purple-500" title="Periode" value={(report.range && report.range.label) || "-"} note="filter aktif" /></div><SimpleDualBars title="Income vs Expense" data={report.incomeExpenseSeries || []} formatCurrency={formatCurrency} /><div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><RankCard title="Top Services by Revenue" items={report.topServices || []} nameKey="serviceName" valueKey="revenue" subKey="qty" subSuffix=" qty" formatCurrency={formatCurrency} /><RankCard title="Top Expense Categories" items={report.topExpenseCategories || []} nameKey="category" valueKey="amount" subKey="count" subSuffix=" transaksi" formatCurrency={formatCurrency} /></div><div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><BreakdownList title="Status Order" items={report.orderStatusBreakdown || []} /><BreakdownList title="Status Pembayaran" items={report.paymentStatusBreakdown || []} /></div></div>;
+  }
+
+  function SettingsPage({ onError, onSaved }) {
+    const [activeTab, setActiveTab] = React.useState("profile");
+    const [loading, setLoading] = React.useState(false);
+    const [saving, setSaving] = React.useState(false);
+    const [settings, setSettings] = React.useState({ businessName: "", businessBrand: "", businessAddress: "", businessWhatsapp: "", businessEmail: "", logoUrl: "", receiptFooter: "", defaultPaymentMethod: "Cash", defaultOrderStatus: "Baru", defaultEstimatedFinish: "1 hari", defaultLandingPage: "Dashboard" });
+    const [paymentMethods, setPaymentMethods] = React.useState([]);
+    const [templates, setTemplates] = React.useState([]);
+    const [newPaymentMethod, setNewPaymentMethod] = React.useState("");
+    const [templateForm, setTemplateForm] = React.useState({ templateId: "", templateName: "", message: "", active: true });
+    React.useEffect(function() { loadSettings(false); }, []);
+    function applySettingsResponse(response) { setSettings(Object.assign({}, settings, response.settings || {})); setPaymentMethods(response.paymentMethods || []); setTemplates(response.messageTemplates || []); }
+    function loadSettings(forceRefresh) { if (!forceRefresh) { const cachedResponse = readSessionCache(LAUNDRYKU_CACHE.SETTINGS); if (cachedResponse && cachedResponse.success) { applySettingsResponse(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { applySettingsResponse(response); writeSessionCache(LAUNDRYKU_CACHE.SETTINGS, response); } else onError((response && response.message) || "Gagal mengambil settings."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getAppSettings(); }
+    function updateSetting(key, value) { setSettings(Object.assign({}, settings, { [key]: value })); }
+    function saveProfile(event) { event.preventDefault(); setSaving(true); google.script.run.withSuccessHandler(function(response) { setSaving(false); if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); loadSettings(true); } else onError((response && response.message) || "Gagal menyimpan settings."); }).withFailureHandler(function(error) { setSaving(false); onError((error && error.message) || "Server error."); }).saveBusinessSettings({ settings }); }
+    function addPaymentMethod() { if (!newPaymentMethod.trim()) { onError("Nama metode pembayaran wajib diisi."); return; } google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); setNewPaymentMethod(""); loadSettings(true); } else onError((response && response.message) || "Gagal menyimpan metode."); }).savePaymentMethod({ name: newPaymentMethod.trim(), active: true }); }
+    function togglePaymentMethod(method) { google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); loadSettings(true); } else onError((response && response.message) || "Gagal update metode."); }).setPaymentMethodActive({ name: method.name, active: !method.active }); }
+    function updateTemplateForm(field, value) { setTemplateForm(Object.assign({}, templateForm, { [field]: value })); }
+    function saveTemplate(event) { event.preventDefault(); google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); setTemplateForm({ templateId: "", templateName: "", message: "", active: true }); loadSettings(true); } else onError((response && response.message) || "Gagal menyimpan template."); }).saveMessageTemplate(templateForm); }
+    function editTemplate(template) { setTemplateForm(template); setActiveTab("templates"); }
+    function toggleTemplate(template) { google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); loadSettings(true); } else onError((response && response.message) || "Gagal update template."); }).setMessageTemplateActive({ templateId: template.templateId, active: !template.active }); }
+    function clearLocalCache() { clearAllLaundrykuCaches(); onSaved("Cache lokal berhasil dibersihkan."); }
+    const tabs = [{ id: "profile", label: "Profil Bisnis", icon: "store" }, { id: "payment", label: "Pembayaran", icon: "payments" }, { id: "templates", label: "Template WA", icon: "chat" }, { id: "maintenance", label: "Maintenance", icon: "build" }];
+    return <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6"><PageHeader eyebrow="App Configuration" title="Setting" description="Kelola profil bisnis, metode pembayaran, template WhatsApp, dan tools maintenance cache." actionLabel="Reload Settings" actionIcon="refresh" onAction={() => loadSettings(true)} loading={loading} /><div className="flex flex-wrap gap-2 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm">{tabs.map((tab) => <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={"flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition-all " + (activeTab === tab.id ? "bg-emerald-500 text-white" : "text-slate-500 hover:bg-slate-50")}><span className="material-symbols-outlined text-[20px]">{tab.icon}</span>{tab.label}</button>)}</div>{activeTab === "profile" && <form onSubmit={saveProfile} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><FormField label="Nama Bisnis"><input className="form-input" value={settings.businessName || ""} onChange={(e) => updateSetting("businessName", e.target.value)} /></FormField><FormField label="Brand Aplikasi"><input className="form-input" value={settings.businessBrand || ""} onChange={(e) => updateSetting("businessBrand", e.target.value)} /></FormField><FormField label="WhatsApp"><input className="form-input" value={settings.businessWhatsapp || ""} onChange={(e) => updateSetting("businessWhatsapp", e.target.value)} /></FormField><FormField label="Email"><input className="form-input" value={settings.businessEmail || ""} onChange={(e) => updateSetting("businessEmail", e.target.value)} /></FormField><div className="md:col-span-2"><FormField label="Alamat"><textarea className="form-input min-h-[90px] resize-none" value={settings.businessAddress || ""} onChange={(e) => updateSetting("businessAddress", e.target.value)}></textarea></FormField></div><FormField label="Logo URL"><input className="form-input" value={settings.logoUrl || ""} onChange={(e) => updateSetting("logoUrl", e.target.value)} /></FormField><FormField label="Default Payment"><select className="form-input" value={settings.defaultPaymentMethod || "Cash"} onChange={(e) => updateSetting("defaultPaymentMethod", e.target.value)}>{paymentMethods.filter((m) => m.active).map((m) => <option key={m.name}>{m.name}</option>)}</select></FormField><div className="md:col-span-2"><FormField label="Footer Struk"><textarea className="form-input min-h-[80px] resize-none" value={settings.receiptFooter || ""} onChange={(e) => updateSetting("receiptFooter", e.target.value)}></textarea></FormField></div></div><div className="mt-6 flex justify-end"><button disabled={saving} className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">{saving ? "Menyimpan..." : "Simpan Profil"}</button></div></form>}{activeTab === "payment" && <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="mb-5 flex gap-3"><input className="form-input" value={newPaymentMethod} onChange={(e) => setNewPaymentMethod(e.target.value)} placeholder="Metode baru" /><button onClick={addPaymentMethod} className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Tambah</button></div><div className="space-y-3">{paymentMethods.map((method) => <div key={method.name} className="flex items-center justify-between rounded-2xl bg-slate-50 p-4"><div><p className="font-black text-slate-800">{method.name}</p><p className="text-xs font-bold text-slate-400">{method.active ? "Aktif" : "Nonaktif"}</p></div><button onClick={() => togglePaymentMethod(method)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500">{method.active ? "Nonaktifkan" : "Aktifkan"}</button></div>)}</div></div>}{activeTab === "templates" && <div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><form onSubmit={saveTemplate} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><div className="space-y-4"><FormField label="Template ID"><input className="form-input uppercase" value={templateForm.templateId} onChange={(e) => updateTemplateForm("templateId", e.target.value.toUpperCase())} /></FormField><FormField label="Nama Template"><input className="form-input" value={templateForm.templateName} onChange={(e) => updateTemplateForm("templateName", e.target.value)} /></FormField><FormField label="Message"><textarea className="form-input min-h-[150px] resize-none" value={templateForm.message} onChange={(e) => updateTemplateForm("message", e.target.value)}></textarea></FormField><button className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Simpan Template</button></div></form><div className="space-y-3">{templates.map((template) => <div key={template.templateId} className="rounded-2xl border border-slate-200 bg-white p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-black text-slate-800">{template.templateName}</p><p className="text-xs font-bold text-emerald-600">{template.templateId}</p></div><div className="flex gap-2"><button onClick={() => editTemplate(template)} className="rounded-lg border px-3 py-2 text-xs font-black text-slate-500">Edit</button><button onClick={() => toggleTemplate(template)} className="rounded-lg border px-3 py-2 text-xs font-black text-slate-500">{template.active ? "Off" : "On"}</button></div></div><p className="mt-3 text-sm text-slate-500">{template.message}</p></div>)}</div></div>}{activeTab === "maintenance" && <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="font-black text-slate-800">Maintenance Tools</h3><p className="mt-1 text-sm text-slate-500">Gunakan tools ini untuk membersihkan cache browser tanpa logout.</p><button onClick={clearLocalCache} className="mt-5 rounded-xl bg-red-500 px-5 py-3 text-sm font-black text-white">Clear Local Cache</button></div>}</div>;
+  }
+
+  function PageHeader({ eyebrow, title, description, actionLabel, actionIcon, onAction, loading, onRefresh }) {
+    return <div className="flex flex-col justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:flex-row lg:items-center"><div><p className="text-xs font-black uppercase tracking-widest text-emerald-500">{eyebrow}</p><h2 className="mt-1 text-2xl font-black text-slate-800">{title}</h2><p className="mt-1 text-sm font-medium text-slate-500">{description}</p></div><div className="flex flex-wrap gap-3">{onRefresh && <button onClick={onRefresh} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600">Refresh</button>}<button onClick={onAction} className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white"><span className={"material-symbols-outlined text-[20px] " + (loading ? "spin" : "")}>{loading ? "progress_activity" : actionIcon}</span>{actionLabel}</button></div></div>;
+  }
+
+  function SimpleBars({ title, data, valueKey, formatCurrency }) {
+    const max = (data || []).reduce((m, item) => Math.max(m, Number(item[valueKey] || 0)), 0);
+    return <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="mb-5 font-black text-slate-800">{title}</h3><div className="flex h-56 items-end gap-3 rounded-2xl bg-slate-50 p-5">{(data || []).map((item) => { const value = Number(item[valueKey] || 0); const h = max > 0 ? Math.max(value / max * 100, value > 0 ? 8 : 3) : 3; return <div key={item.key || item.label} className="flex flex-1 flex-col items-center gap-2"><span className="text-[10px] font-black text-slate-400">{value ? formatCurrency(value).replace("Rp ", "") : "0"}</span><div className="flex h-36 w-full items-end rounded-xl bg-white p-2 shadow-inner"><div className="w-full rounded-t-lg bg-emerald-500" style={{height: h + "%"}}></div></div><span className="text-[10px] font-black text-slate-500">{item.label}</span></div>; })}</div></div>;
+  }
+
+  function SimpleDualBars({ title, data, formatCurrency }) {
+    const max = (data || []).reduce((m, item) => Math.max(m, Number(item.income || 0), Number(item.expense || 0)), 0);
+    return <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="mb-5 font-black text-slate-800">{title}</h3><div className="flex h-64 items-end gap-3 rounded-2xl bg-slate-50 p-5">{(data || []).map((item) => { const ih = max > 0 ? Math.max(Number(item.income || 0) / max * 100, item.income ? 8 : 3) : 3; const eh = max > 0 ? Math.max(Number(item.expense || 0) / max * 100, item.expense ? 8 : 3) : 3; return <div key={item.key || item.label} className="flex flex-1 flex-col items-center gap-2"><div className="flex h-44 w-full items-end gap-1 rounded-xl bg-white p-2 shadow-inner"><div title={formatCurrency(item.income)} className="w-1/2 rounded-t-lg bg-emerald-500" style={{height: ih + "%"}}></div><div title={formatCurrency(item.expense)} className="w-1/2 rounded-t-lg bg-orange-400" style={{height: eh + "%"}}></div></div><span className="text-[10px] font-black text-slate-500">{item.label}</span></div>; })}</div></div>;
+  }
+
+  function RankCard({ title, items, nameKey, valueKey, subKey, subSuffix, formatCurrency }) {
+    const max = (items || []).reduce((m, item) => Math.max(m, Number(item[valueKey] || 0)), 0);
+    return <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="mb-5 font-black text-slate-800">{title}</h3><div className="space-y-4">{(!items || items.length === 0) && <p className="text-sm font-bold text-slate-400">Belum ada data.</p>}{(items || []).map((item) => { const value = Number(item[valueKey] || 0); const width = max > 0 ? Math.max(value / max * 100, 8) : 8; return <div key={item[nameKey]}><div className="mb-1 flex justify-between gap-4 text-sm"><span className="font-black text-slate-800">{item[nameKey]}</span><span className="font-black text-emerald-600">{formatCurrency(value)}</span></div><p className="mb-2 text-xs font-bold text-slate-400">{item[subKey] || 0}{subSuffix}</p><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{width: width + "%"}}></div></div></div>; })}</div></div>;
+  }
+
+  function BreakdownList({ title, items }) {
+    const total = (items || []).reduce((sum, item) => sum + Number(item.count || 0), 0);
+    return <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><h3 className="mb-5 font-black text-slate-800">{title}</h3><div className="space-y-4">{(!items || items.length === 0) && <p className="text-sm font-bold text-slate-400">Belum ada data.</p>}{(items || []).map((item) => { const width = total > 0 ? Math.max(Number(item.count || 0) / total * 100, 8) : 8; return <div key={item.label}><div className="mb-1 flex justify-between text-sm font-black text-slate-700"><span>{item.label}</span><span>{item.count}</span></div><div className="h-2 rounded-full bg-slate-100"><div className="h-2 rounded-full bg-emerald-500" style={{width: width + "%"}}></div></div></div>; })}</div></div>;
+  }
+
+  function FilterBar({ search, setSearch, onSearch, onReset, selects }) {
+    return <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_repeat(3,180px)_auto]"><form onSubmit={onSearch} className="relative"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400"><span className="material-symbols-outlined text-[20px]">search</span></span><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm font-bold outline-none focus:border-emerald-500" placeholder="Cari data..." /></form>{selects.map((select, idx) => <select key={idx} className="filter-select" value={select.value} onChange={(e) => select.setValue(e.target.value)}>{select.options.map((option) => <option key={option} value={option}>{select.labels && select.labels[option] ? select.labels[option] : option}</option>)}</select>)}<div className="flex gap-2"><button onClick={onSearch} className="rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-white">Filter</button><button onClick={onReset} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-500">Reset</button></div></div></div>;
+  }
+
+  function DataTable({ title, subtitle, loading, columns, children }) {
+    return <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 p-5"><div><h3 className="font-black text-slate-800">{title}</h3><p className="mt-1 text-xs font-bold text-slate-400">{subtitle}</p></div>{loading && <div className="flex items-center gap-2 rounded-full bg-green-50 px-3 py-1 text-xs font-black text-emerald-600"><span className="material-symbols-outlined spin text-[16px]">progress_activity</span>Loading</div>}</div><div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left"><thead><tr className="bg-slate-50/70 text-[10px] font-black uppercase tracking-widest text-slate-400">{columns.map((c) => <th key={c} className="px-5 py-4">{c}</th>)}</tr></thead><tbody className="divide-y divide-slate-100">{children}</tbody></table></div></div>;
+  }
+
+  function Modal({ title, subtitle, onClose, children }) {
+    return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"><div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl animate-[fadeIn_.25s_ease-out]"><div className="flex items-center justify-between border-b border-slate-100 p-6"><div><p className="text-xs font-black uppercase tracking-widest text-emerald-500">{title}</p><h3 className="mt-1 text-xl font-black text-slate-800">{subtitle}</h3></div><button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500"><span className="material-symbols-outlined text-[20px]">close</span></button></div><div className="p-6">{children}</div></div></div>;
+  }
+
+  function ModalActions({ saving, onCancel, submitLabel }) {
+    return <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-black text-slate-600">Batal</button><button type="submit" disabled={saving} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white disabled:opacity-60"><span className={"material-symbols-outlined text-[20px] " + (saving ? "spin" : "")}>{saving ? "progress_activity" : "save"}</span>{saving ? "Menyimpan..." : submitLabel}</button></div>;
+  }
+
+  function ComingSoonPage({ title, icon, onBack }) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm animate-[fadeIn_.35s_ease-out]">
+          <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-emerald-50"></div>
+          <div className="absolute -bottom-16 -left-16 h-40 w-40 rounded-full bg-lime-50"></div>
+
+          <div className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-green-50 text-emerald-500 shadow-inner transition-all duration-500 hover:rotate-6 hover:scale-105">
+            <span className="material-symbols-outlined text-[42px]">{icon}</span>
+          </div>
+
+          <h2 className="relative text-3xl font-black text-slate-800">{title}</h2>
+
+          <p className="relative mx-auto mt-3 max-w-md text-sm font-medium leading-relaxed text-slate-500">
+            Modul <span className="font-black text-emerald-500">{title}</span> sudah terhubung ke menu dan siap dikembangkan pada tahap berikutnya.
+          </p>
+
+          <div className="relative mt-8 rounded-2xl border border-dashed border-emerald-200 bg-green-50 p-5 text-left">
+            <p className="text-xs font-black uppercase tracking-widest text-emerald-500">
+              Coming Soon
+            </p>
+
+            <p className="mt-2 text-sm font-medium leading-relaxed text-slate-600">
+              Area ini akan menjadi halaman kerja untuk fitur {title}. Untuk sekarang, halaman ini dipakai sebagai indikator bahwa routing menu sudah aktif.
+            </p>
+          </div>
+
+          <button
+            onClick={onBack}
+            className="relative mt-8 inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-green-100 transition-all duration-300 hover:-translate-y-0.5 hover:bg-emerald-600 hover:shadow-xl active:scale-95"
+          >
+            <span className="material-symbols-outlined text-[20px]">dashboard</span>
+            Kembali ke Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function StatCard({ icon, iconClass, title, value, trend, note }) {
+    return (
+      <div className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className={"flex h-12 w-12 items-center justify-center rounded-xl text-white shadow-sm transition-all duration-300 group-hover:rotate-3 group-hover:scale-110 " + iconClass}>
+          <span className="material-symbols-outlined text-[24px]">{icon}</span>
+        </div>
+
+        <div className="min-w-0">
+          <p className="mb-0.5 text-xs font-black text-slate-500">{title}</p>
+
+          <div className="flex items-baseline gap-2">
+            <span className="truncate text-2xl font-black text-slate-800">{value}</span>
+
+            {trend ? (
+              <span className="flex items-center text-[10px] font-black text-emerald-500">
+                <span className="material-symbols-outlined mr-0.5 text-[14px]">north</span>
+                {trend}
+                <span className="ml-1 font-normal text-slate-400">{note}</span>
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold text-slate-400">{note}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function RepeatOrderCard({ onRepeatOrder }) {
+    const customers = [
+      { initials: "BS", name: "Budi Santoso", phone: "0812 3456 7890", count: "5 order terakhir" },
+      { initials: "SA", name: "Siti Aisyah", phone: "0813 2222 1111", count: "3 order terakhir" },
+      { initials: "AW", name: "Andi Wijaya", phone: "0812 8888 9999", count: "4 order terakhir" }
+    ];
+
+    return (
+      <div className="flex flex-col rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-slate-400">repeat</span>
+            <h4 className="text-xs font-black text-slate-800">Repeat Order</h4>
+          </div>
+
+          <a className="flex items-center gap-1 text-[10px] font-black text-emerald-500 transition-all duration-300 hover:translate-x-1" href="#">
+            <span>Lihat Semua</span>
+            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+          </a>
+        </div>
+
+        <div className="space-y-4">
+          {customers.map((customer) => (
+            <div className="group flex items-center justify-between" key={customer.name}>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-100 text-[10px] font-black text-slate-400 transition-all duration-300 group-hover:scale-110 group-hover:bg-green-50 group-hover:text-emerald-500">
+                  {customer.initials}
+                </div>
+
+                <div>
+                  <p className="text-xs font-black text-slate-800">{customer.name}</p>
+                  <p className="text-[10px] text-slate-400">{customer.count}</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onRepeatOrder({
+                    orderType: "repeat",
+                    customerName: customer.name,
+                    whatsapp: customer.phone,
+                    address: "",
+                    items: []
+                  })
+                }
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-[10px] font-black text-emerald-500 transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-green-50"
+              >
+                Ulangi Order
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function AiAssistantCard() {
+    const tasks = [
+      {
+        icon: "chat",
+        iconClass: "bg-emerald-500",
+        title: "Konfirmasi Order",
+        text: "Halo {nama}, terima kasih! Order #{id} kamu siap kami proses."
+      },
+      {
+        icon: "shopping_bag",
+        iconClass: "bg-blue-500",
+        title: "Siap Diambil",
+        text: "Halo {nama}, cucianmu sudah selesai dan siap diambil ya 😊"
+      },
+      {
+        icon: "notifications",
+        iconClass: "bg-orange-400",
+        title: "Reminder Belum Diambil",
+        text: "Halo {nama}, cucianmu sudah selesai sejak {tanggal}. Ditunggu ya 🙏"
+      }
+    ];
+
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl">
+        <div className="mb-6 flex items-center gap-2">
+          <span className="material-symbols-outlined text-[22px] text-emerald-500">smart_toy</span>
+          <h4 className="text-xs font-black text-slate-800">AI WhatsApp Assistant</h4>
+          <span className="rounded bg-green-100 px-1.5 py-0.5 text-[8px] font-black text-emerald-500">BETA</span>
+        </div>
+
+        <div className="space-y-4">
+          {tasks.map((task) => (
+            <div
+              key={task.title}
+              className="group flex cursor-pointer items-start gap-3 rounded-2xl bg-slate-50 p-3 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-100 hover:shadow-sm"
+            >
+              <div className={"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 " + task.iconClass}>
+                <span className="material-symbols-outlined text-[20px]">{task.icon}</span>
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-black text-slate-800">{task.title}</p>
+                  <span className="material-symbols-outlined text-[16px] text-slate-400 transition-all duration-300 group-hover:translate-x-1 group-hover:text-emerald-500">
+                    chevron_right
+                  </span>
+                </div>
+
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  {task.text}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function LegendItem({ color, label, value }) {
+    return (
+      <div className="flex items-center justify-between rounded-lg px-2 py-1 text-[11px] transition-all duration-300 hover:bg-slate-50">
+        <div className="flex items-center gap-2">
+          <div className={"h-2.5 w-2.5 rounded-full " + color}></div>
+          <span className="font-black text-slate-600">{label}</span>
+        </div>
+
+        <span className="text-slate-400">{value}</span>
+      </div>
+    );
+  }
+
+  function PaginationButton({ label, icon }) {
+    return (
+      <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-xs font-black text-slate-600 transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-sm">
+        {icon ? <span className="material-symbols-outlined text-[18px]">{icon}</span> : label}
+      </button>
+    );
+  }
+
+  function FormField({ label, children }) {
+    return (
+      <label className="block space-y-1.5">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        {children}
+      </label>
+    );
+  }
+
+  function SmallField({ label, children }) {
+    return (
+      <label className="block space-y-1.5">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+          {label}
+        </span>
+        {children}
+      </label>
+    );
+  }
+
+  function SummaryRow({ label, value }) {
+    return (
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <span className="text-sm font-bold text-slate-500">{label}</span>
+        <span className="text-sm font-black text-slate-800">{value}</span>
+      </div>
+    );
+  }
+
+  function Toast({ type, message }) {
+    return (
+      <div className="fixed right-5 top-5 z-[999] animate-[toastIn_.25s_ease-out]">
+        <div className={"flex items-center gap-3 rounded-2xl border bg-white px-5 py-4 shadow-xl " + (type === "success" ? "border-emerald-100 text-emerald-700" : "border-red-100 text-red-600")}>
+          <span className="material-symbols-outlined">
+            {type === "success" ? "check_circle" : "error"}
+          </span>
+          <p className="text-sm font-black">{message}</p>
+        </div>
+      </div>
+    );
+  }
