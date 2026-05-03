@@ -155,7 +155,7 @@
     function apiCall(action, payload) {
       const apiUrl = window.MANAGERKU_CONFIG && window.MANAGERKU_CONFIG.apiUrl;
 
-      if (!apiUrl || apiUrl === "PASTE_CLIENT_GAS_WEB_APP_EXEC_URL_HERE") {
+      if (!apiUrl || apiUrl === "https://script.google.com/macros/s/AKfycbyyUazz2tldCX6YI0wueT5t0yNAf0RKdR_hN1Cf5xOeOJEgYFeBXeNCXisbrNj0VS_Ykw/exec") {
         return Promise.reject(new Error("GAS Web App API URL belum diisi di MANAGERKU_CONFIG.apiUrl."));
       }
 
