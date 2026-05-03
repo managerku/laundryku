@@ -144,17 +144,20 @@
   <script>
     window.MANAGERKU_CONFIG = {
       clientId: "demo-client",
-      apiUrl: "https://script.google.com/macros/s/AKfycbw6FYPQGJwRMm0-GKcGRo3L1HegSUh6elkatZnzDABO2b1129dzOlRN7D1fjMiEMKYE4w/exec",
-      frontendVersion: "2026.05.03.1"
+      apiUrl: "https://script.google.com/macros/s/AKfycbwKsISIZvjaCJ_Y8T5TUmf7ojMd3LlBPq2g-NMIIIVVMc05c2MUsGPw-mXwqoo4n9pIiA/exec",
+      frontendVersion: "2026.05.03.2"
     };
-  
+
     function apiCall(action, payload) {
-      const apiUrl = window.MANAGERKU_CONFIG && window.MANAGERKU_CONFIG.apiUrl;
-  
+      const config = window.MANAGERKU_CONFIG || {};
+      const apiUrl = String(config.apiUrl || "").trim();
+
       if (!apiUrl || apiUrl.indexOf("https://script.google.com/macros/s/") !== 0) {
-        return Promise.reject(new Error("GAS Web App API URL belum valid di MANAGERKU_CONFIG.apiUrl."));
+        return Promise.reject(
+          new Error("GAS Web App API URL belum valid di MANAGERKU_CONFIG.apiUrl.")
+        );
       }
-  
+
       return fetch(apiUrl, {
         method: "POST",
         headers: {
@@ -162,20 +165,33 @@
         },
         body: JSON.stringify({
           action: action,
-          payload: payload || {}
+          payload: payload || {},
+          clientId: config.clientId || "",
+          frontendVersion: config.frontendVersion || ""
         })
-      }).then(function(response) {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status + " saat memanggil API.");
-        }
-        return response.json();
-      });
+      })
+        .then(function(response) {
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status + " saat memanggil API Managerku.id.");
+          }
+
+          return response.text();
+        })
+        .then(function(text) {
+          try {
+            return JSON.parse(text);
+          } catch (error) {
+            console.error("Invalid API response:", text);
+            throw new Error("Response API bukan JSON valid. Cek deploy Code.gs doPost.");
+          }
+        });
     }
 
+    window.apiCall = apiCall;
 
     /**
      * google.script.run compatibility shim.
-     * Keeps the existing dashboard code working from GitHub Pages.
+     * This keeps existing dashboard.html code working from GitHub Pages.
      */
     window.google = window.google || {};
     window.google.script = window.google.script || {};
@@ -223,7 +239,8 @@
     window.google.script.run = createGoogleScriptRunShim();
   </script>
 
-  <script type="text/babel" src="./dashboard.html?v=20260503-1"></script>
+  <!-- Dashboard frontend from GitHub repo -->
+  <script type="text/babel" src="./dashboard.html?v=20260503-2"></script>
 
   <script type="text/babel">
     const { useEffect, useState } = React;
@@ -231,7 +248,7 @@
     const SESSION_KEY = "laundryku_user_session";
     const USERNAME_KEY = "laundryku_username";
     const ACTIVE_PAGE_KEY = "laundryku_active_page";
-    const SESSION_EXPIRES_MS = 1000 * 60 * 60 * 12; // 12 hours
+    const SESSION_EXPIRES_MS = 1000 * 60 * 60 * 12;
 
     function getSavedSession() {
       try {
@@ -283,10 +300,7 @@
         localStorage.removeItem(ACTIVE_PAGE_KEY);
 
         Object.keys(sessionStorage).forEach(function(key) {
-          if (
-            key.indexOf("laundryku_data_order_cache") === 0 ||
-            key.indexOf("laundryku_customer_cache") === 0
-          ) {
+          if (key.indexOf("laundryku_") === 0) {
             sessionStorage.removeItem(key);
           }
         });
@@ -329,7 +343,7 @@
           return;
         }
 
-        if (typeof google === "undefined" || !google.script || !google.script.run) {
+        if (typeof apiCall !== "function") {
           setMessage("API Managerku.id belum tersedia. Cek MANAGERKU_CONFIG.apiUrl.");
           setMessageType("error");
           return;
@@ -337,8 +351,12 @@
 
         setLoading(true);
 
-        google.script.run
-          .withSuccessHandler(function(response) {
+        apiCall("loginUser", {
+          username: username.trim(),
+          password: password,
+          remember: remember
+        })
+          .then(function(response) {
             setLoading(false);
 
             if (response && response.success) {
@@ -355,22 +373,17 @@
 
               setTimeout(function() {
                 setCurrentPage("dashboard");
-              }, 500);
+              }, 300);
 
             } else {
               setMessage((response && response.message) || "Username atau password salah.");
               setMessageType("error");
             }
           })
-          .withFailureHandler(function(error) {
+          .catch(function(error) {
             setLoading(false);
             setMessage((error && error.message) || "Terjadi error pada server.");
             setMessageType("error");
-          })
-          .loginUser({
-            username: username.trim(),
-            password: password,
-            remember: remember
           });
       }
 
@@ -416,40 +429,40 @@
                       local_laundry_service
                     </span>
                     <span className="font-h2 text-2xl font-bold tracking-tight text-on-primary">
-                      Laundryku
+                      Managerku.id
                     </span>
                   </div>
 
                   <div className="mt-1 flex items-center gap-1 opacity-80">
                     <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-on-primary">
-                      supported by MJ
+                      Laundry Management System
                     </span>
                   </div>
                 </div>
 
                 <div className="relative z-10">
                   <h1 className="mb-4 max-w-md font-h1 text-3xl font-extrabold leading-tight tracking-tight text-on-primary lg:text-[32px]">
-                    The future of laundry management is here.
+                    Sistem digital sederhana untuk laundry UMKM.
                   </h1>
                   <p className="max-w-md text-base leading-relaxed text-on-primary/90 lg:text-lg">
-                    Experience the most efficient way to track orders, manage customers, and scale your laundry business with precision.
+                    Kelola order, customer, pembayaran, pengeluaran, laporan, dan WhatsApp reminder dalam satu dashboard.
                   </p>
                 </div>
 
                 <div className="relative z-10 flex gap-6">
                   <div className="flex flex-col">
-                    <span className="font-h3 text-2xl font-bold text-on-primary">15k+</span>
+                    <span className="font-h3 text-2xl font-bold text-on-primary">UMKM</span>
                     <span className="text-[11px] font-medium uppercase tracking-widest text-on-primary/70">
-                      Orders Processed
+                      Friendly
                     </span>
                   </div>
 
                   <div className="h-10 w-px self-center bg-on-primary/20"></div>
 
                   <div className="flex flex-col">
-                    <span className="font-h3 text-2xl font-bold text-on-primary">99.9%</span>
+                    <span className="font-h3 text-2xl font-bold text-on-primary">99K</span>
                     <span className="text-[11px] font-medium uppercase tracking-widest text-on-primary/70">
-                      Uptime Reliable
+                      Support Bulanan
                     </span>
                   </div>
                 </div>
@@ -463,13 +476,13 @@
                       local_laundry_service
                     </span>
                     <span className="font-h2 text-2xl font-bold tracking-tight text-primary">
-                      Laundryku
+                      Managerku.id
                     </span>
                   </div>
 
                   <div className="mt-1 flex items-center justify-center gap-1 opacity-70">
                     <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-primary">
-                      supported by MJ
+                      Laundry Management System
                     </span>
                   </div>
                 </div>
@@ -479,7 +492,7 @@
                     Welcome back
                   </h2>
                   <p className="text-sm leading-relaxed text-on-surface-variant sm:text-base">
-                    Please enter your details to access your dashboard.
+                    Masuk untuk mengakses dashboard Managerku.id.
                   </p>
                 </div>
 
@@ -528,7 +541,7 @@
                       <button
                         type="button"
                         className="text-xs font-medium text-primary transition-all hover:underline sm:text-sm"
-                        onClick={() => alert("Hubungi admin untuk reset password.")}
+                        onClick={() => alert("Hubungi admin Managerku.id untuk reset password.")}
                       >
                         Forgot Password?
                       </button>
@@ -593,15 +606,7 @@
           </div>
 
           <footer className="relative z-10 px-4 pb-6 text-center text-xs font-medium text-outline/60 sm:text-sm md:fixed md:bottom-6 md:left-1/2 md:w-full md:-translate-x-1/2 md:px-6 md:pb-0">
-            © 2026 Laundryku Laundry Management Systems. All rights reserved.
-            <span className="mx-2 hidden sm:inline">|</span>
-            <a className="block transition-colors hover:text-primary sm:inline" href="#">
-              Privacy Policy
-            </a>
-            <span className="mx-2 hidden sm:inline">|</span>
-            <a className="block transition-colors hover:text-primary sm:inline" href="#">
-              Terms of Service
-            </a>
+            © 2026 Managerku.id Laundry Management System. All rights reserved.
           </footer>
         </main>
       );
