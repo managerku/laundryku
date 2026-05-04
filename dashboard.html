@@ -1,133 +1,194 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laundryku - Dashboard</title>
 
-(function injectManagerkuDashboardStyles() {
-  if (document.getElementById("managerku-dashboard-styles")) return;
-  const style = document.createElement("style");
-  style.id = "managerku-dashboard-styles";
-  style.textContent = `
-  .chart-placeholder {
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
-  }
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Manrope:wght@700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          fontFamily: {
+            h1: ["Manrope", "sans-serif"],
+            h2: ["Manrope", "sans-serif"],
+            h3: ["Manrope", "sans-serif"],
+            body: ["Inter", "sans-serif"]
+          }
+        }
+      }
+    };
+  </script>
 
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
-    border-radius: 10px;
-  }
-
-  .form-input {
-    width: 100%;
-    border-radius: 0.75rem;
-    border: 1px solid #e2e8f0;
-    background: #ffffff;
-    padding: 0.75rem 0.875rem;
-    font-size: 0.875rem;
-    font-weight: 700;
-    outline: none;
-    transition: all 0.25s ease;
-  }
-
-  .form-input:focus {
-    border-color: #10b981;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
-  }
-
-  .quick-input {
-    width: 100%;
-    border-radius: 0.75rem;
-    border: 1px solid #e2e8f0;
-    padding: 0.55rem 0.75rem;
-    font-size: 0.875rem;
-    font-weight: 700;
-    outline: none;
-    transition: all 0.25s ease;
-  }
-
-  .quick-input:focus {
-    border-color: #10b981;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
-  }
-
-  .filter-select {
-    width: 100%;
-    border-radius: 0.75rem;
-    border: 1px solid #e2e8f0;
-    background: #ffffff;
-    padding: 0.75rem 0.875rem;
-    font-size: 0.875rem;
-    font-weight: 800;
-    color: #475569;
-    outline: none;
-    transition: all 0.25s ease;
-  }
-
-  .filter-select:focus {
-    border-color: #10b981;
-    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
-  }
-
-  .pagination-control {
-    display: flex;
-    height: 2rem;
-    width: 2rem;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.5rem;
-    border: 1px solid #e2e8f0;
-    background: #ffffff;
-    color: #475569;
-    transition: all 0.25s ease;
-  }
-
-  .pagination-control:hover:not(:disabled) {
-    background: #f8fafc;
-    transform: translateY(-1px);
-  }
-
-  .pagination-control:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
+  <style>
+    html, body, #root { min-height: 100%; }
+    body { margin: 0; font-family: Inter, sans-serif; background: #f8fafc; }
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
     }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+<script>
+  /**
+   * IMPORTANT:
+   * Replace this with your deployed Google Apps Script Web App /exec URL.
+   * Keep this value the same as the API_URL in index.html.
+   */
+  window.LAUNDRYKU_API_URL = "https://script.google.com/macros/s/AKfycbwETE_EaYK8HFFWMif2x-HX832LJNqO2UyC5XFI4Hc86NdCasvsYYYL7kgt9lISGXgipg/exec";
 
-    to {
-      opacity: 1;
-      transform: translateY(0);
+  window.LAUNDRYKU_SESSION_KEY = "laundryku_user_session";
+  window.LAUNDRYKU_TOKEN_KEY = "laundryku_session_token";
+  window.LAUNDRYKU_ACTIVE_PAGE_KEY = "laundryku_active_page";
+  window.LAUNDRYKU_INDEX_PAGE = "index.html";
+
+  function laundrykuIsApiConfigured() {
+    return Boolean(
+      window.LAUNDRYKU_API_URL &&
+      window.LAUNDRYKU_API_URL.indexOf("https://script.google.com/macros/s/") === 0 &&
+      window.LAUNDRYKU_API_URL.indexOf("/exec") > -1
+    );
+  }
+
+  function laundrykuReadSession() {
+    try {
+      var rawSession = localStorage.getItem(window.LAUNDRYKU_SESSION_KEY);
+      if (!rawSession) return null;
+
+      var session = JSON.parse(rawSession);
+      if (!session || !session.user || !session.token) return null;
+
+      if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+        laundrykuClearSession();
+        return null;
+      }
+
+      return session;
+    } catch (error) {
+      laundrykuClearSession();
+      return null;
     }
   }
 
-  @keyframes toastIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px) scale(0.98);
-    }
-
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+  function laundrykuClearSession() {
+    try {
+      localStorage.removeItem(window.LAUNDRYKU_SESSION_KEY);
+      localStorage.removeItem(window.LAUNDRYKU_TOKEN_KEY);
+      localStorage.removeItem(window.LAUNDRYKU_ACTIVE_PAGE_KEY);
+      Object.keys(sessionStorage).forEach(function(key) {
+        if (key.indexOf("laundryku_") === 0) sessionStorage.removeItem(key);
+      });
+    } catch (error) {}
   }
 
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
+  function laundrykuGetIndexUrl() {
+    var path = window.location.pathname || "/";
+    var fileNamePattern = /\/[^/]*\.html$/i;
+    var basePath = fileNamePattern.test(path) ? path.replace(fileNamePattern, "/") : (path.endsWith("/") ? path : path + "/");
+    return basePath + window.LAUNDRYKU_INDEX_PAGE;
+  }
+
+  async function laundrykuCallApi(action, payload) {
+    if (!laundrykuIsApiConfigured()) {
+      throw new Error("API_URL belum diisi. Paste URL Web App GAS /exec ke file dashboard.html.");
     }
+
+    var session = laundrykuReadSession();
+    var requestBody = Object.assign({}, payload || {}, {
+      action: action,
+      token: session && session.token ? session.token : localStorage.getItem(window.LAUNDRYKU_TOKEN_KEY)
+    });
+
+    var response = await fetch(window.LAUNDRYKU_API_URL, {
+      method: "POST",
+      body: JSON.stringify(requestBody),
+      redirect: "follow"
+    });
+
+    var text = await response.text();
+    if (!text) throw new Error("Server tidak mengembalikan response.");
+
+    var data;
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      throw new Error("Response server bukan JSON valid. Pastikan GAS sudah dideploy sebagai Web App API.");
+    }
+
+    if (data && data.success === false && /session|token|login/i.test(String(data.message || ""))) {
+      laundrykuClearSession();
+      window.location.href = laundrykuGetIndexUrl();
+      return data;
+    }
+
+    return data;
   }
 
-  .spin {
-    animation: spin 0.9s linear infinite;
-  }
-  `;
-  document.head.appendChild(style);
-})();
+  function createGoogleScriptRunShim() {
+    var successHandler = null;
+    var failureHandler = null;
+    var proxy = null;
 
+    function resetHandlers() {
+      successHandler = null;
+      failureHandler = null;
+    }
+
+    proxy = new Proxy({}, {
+      get: function(_target, prop) {
+        if (prop === "withSuccessHandler") {
+          return function(callback) {
+            successHandler = callback;
+            return proxy;
+          };
+        }
+
+        if (prop === "withFailureHandler") {
+          return function(callback) {
+            failureHandler = callback;
+            return proxy;
+          };
+        }
+
+        return function(payload) {
+          var onSuccess = successHandler;
+          var onFailure = failureHandler;
+          resetHandlers();
+
+          laundrykuCallApi(String(prop), payload || {})
+            .then(function(result) {
+              if (typeof onSuccess === "function") onSuccess(result);
+            })
+            .catch(function(error) {
+              if (typeof onFailure === "function") {
+                onFailure(error);
+              } else {
+                console.error(error);
+              }
+            });
+
+          return proxy;
+        };
+      }
+    });
+
+    return proxy;
+  }
+
+  window.google = window.google || {};
+  window.google.script = window.google.script || {};
+  window.google.script.run = createGoogleScriptRunShim();
+</script>
+<script type="text/babel">
   const LAUNDRYKU_CACHE = {
     DASHBOARD: "laundryku_dashboard_cache",
     SERVICES_PAGE: "laundryku_services_page_cache",
@@ -187,10 +248,21 @@
     const [prefillOrder, setPrefillOrder] = React.useState(null);
     const [dataOrderRefreshKey, setDataOrderRefreshKey] = React.useState(0);
     const [customerRefreshKey, setCustomerRefreshKey] = React.useState(0);
+    const [notificationOpen, setNotificationOpen] = React.useState(false);
+    const [notificationSummary, setNotificationSummary] = React.useState({
+      totalOrders: 0,
+      notFinishedOrders: 0,
+      unpaidOrders: 0,
+      readyToPickupOrders: 0,
+      attentionOrders: 0,
+      latestAttentionOrders: []
+    });
+    const [currentDateLabel, setCurrentDateLabel] = React.useState(formatCurrentDate());
 
     const displayName = user && user.name ? user.name : "Administrator";
     const displayRole = user && user.role ? user.role : "admin";
     const avatarInitial = displayName.charAt(0).toUpperCase();
+    const pageMeta = getPageMeta(activePage);
 
     const fallbackServices = [
       { id: "CKL", category: "Kiloan", name: "Cuci Kering Lipat", unit: "kg", price: 15000 },
@@ -278,7 +350,68 @@
 
     React.useEffect(function() {
       loadServiceCatalog(false);
+      loadHeaderNotification();
     }, []);
+
+    React.useEffect(function() {
+      const timer = setInterval(function() {
+        setCurrentDateLabel(formatCurrentDate());
+      }, 60000);
+
+      return function() {
+        clearInterval(timer);
+      };
+    }, []);
+
+    function formatCurrentDate() {
+      try {
+        return new Date().toLocaleDateString("id-ID", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric"
+        });
+      } catch (error) {
+        return new Date().toLocaleDateString("id-ID");
+      }
+    }
+
+    function getPageMeta(page) {
+      const map = {
+        Dashboard: { title: "Dashboard", subtitle: "Ringkasan performa laundry hari ini." },
+        "Order Baru": { title: "Order Baru", subtitle: "Input order dan layanan customer." },
+        "Data Order": { title: "Data Order", subtitle: "Kelola status, pembayaran, dan notifikasi order." },
+        Customer: { title: "Customer", subtitle: "Database customer dan repeat order." },
+        "Layanan & Harga": { title: "Layanan & Harga", subtitle: "Kelola katalog layanan, harga, dan status aktif." },
+        Pengeluaran: { title: "Pengeluaran", subtitle: "Catat dan pantau biaya operasional laundry." },
+        Laporan: { title: "Laporan", subtitle: "Analisis omzet, cashflow, profit, dan performa layanan." },
+        Setting: { title: "Setting", subtitle: "Profil bisnis, pembayaran, template WhatsApp, dan cache." }
+      };
+
+      return map[page] || { title: page, subtitle: "Kelola modul " + page + "." };
+    }
+
+    function loadHeaderNotification() {
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response && response.success) {
+            setNotificationSummary({
+              totalOrders: Number(response.totalOrders || 0),
+              notFinishedOrders: Number(response.notFinishedOrders || 0),
+              unpaidOrders: Number(response.unpaidOrders || 0),
+              readyToPickupOrders: Number(response.readyToPickupOrders || 0),
+              attentionOrders: Number(response.attentionOrders || 0),
+              latestAttentionOrders: response.latestAttentionOrders || []
+            });
+          }
+        })
+        .withFailureHandler(function() {})
+        .getHeaderNotificationSummary();
+    }
 
     function loadServiceCatalog(forceRefresh) {
       if (!forceRefresh) {
@@ -359,7 +492,7 @@
 
     function handleQuickSave(payload) {
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        showToast("error", "API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        showToast("error", "google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -402,6 +535,15 @@
         LAUNDRYKU_CACHE.SETTINGS
       ]);
       showToast("success", message || "Settings berhasil diperbarui.");
+    }
+
+    function handleOrderTrackingChanged(message) {
+      clearTableCaches();
+      loadHeaderNotification();
+      setDataOrderRefreshKey(function(value) {
+        return value + 1;
+      });
+      showToast("success", message || "Tracking order berhasil diperbarui.");
     }
 
     function getStatusClass(status) {
@@ -530,46 +672,101 @@
             </div>
           </aside>
 
-          <main className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-slate-50">
+          <main className="flex h-screen min-w-0 flex-1 flex-col overflow-y-auto bg-slate-50 pb-28 lg:pb-0">
             <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur lg:px-6">
               <div className="flex items-center justify-between gap-4">
-                <div className="flex flex-1 items-center gap-3">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 hover:shadow-md active:scale-95"
+                    className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600 hover:shadow-md active:scale-95 lg:flex"
                   >
                     <span className="material-symbols-outlined text-[24px]">
                       {sidebarOpen ? "menu_open" : "menu"}
                     </span>
                   </button>
 
-                  <div className="relative hidden w-full max-w-xl md:block">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                      <span className="material-symbols-outlined text-[22px]">search</span>
-                    </span>
-
-                    <input
-                      className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none transition-all duration-300 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                      placeholder="Cari order, customer, atau no. WA..."
-                      type="text"
-                    />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined hidden text-[24px] text-emerald-500 sm:inline">
+                        {getMenuIcon(activePage)}
+                      </span>
+                      <h1 className="truncate text-lg font-black text-slate-800 sm:text-xl">
+                        {pageMeta.title}
+                      </h1>
+                    </div>
+                    <p className="mt-0.5 hidden truncate text-xs font-bold text-slate-400 md:block">
+                      {pageMeta.subtitle}
+                    </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <div className="hidden cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md xl:flex">
+                  <div className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-bold text-slate-600 xl:flex">
                     <span className="material-symbols-outlined text-[22px] text-slate-400">calendar_month</span>
-                    <span>22 Mei 2024</span>
-                    <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
+                    <span>{currentDateLabel}</span>
                   </div>
 
-                  <button className="relative rounded-xl border border-slate-200 bg-slate-50 p-2 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md">
-                    <span className="material-symbols-outlined text-[24px] text-slate-500">notifications</span>
-                    <span className="absolute right-1.5 top-1.5 flex h-4 w-4 animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-500 text-[10px] font-black text-white">
-                      3
-                    </span>
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setNotificationOpen(!notificationOpen)}
+                      className="relative rounded-xl border border-slate-200 bg-slate-50 p-2 transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-md"
+                    >
+                      <span className="material-symbols-outlined text-[24px] text-slate-500">notifications</span>
+                      {Number(notificationSummary.attentionOrders || 0) > 0 && (
+                        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 animate-pulse items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-black text-white">
+                          {Number(notificationSummary.attentionOrders || 0) > 99 ? "99+" : notificationSummary.attentionOrders}
+                        </span>
+                      )}
+                    </button>
+
+                    {notificationOpen && (
+                      <div className="absolute right-0 mt-3 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                        <div className="border-b border-slate-100 p-4">
+                          <p className="text-sm font-black text-slate-800">Ringkasan Order</p>
+                          <p className="mt-1 text-xs font-bold text-slate-400">Data real dari sheet Orders.</p>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 p-3">
+                          <div className="rounded-xl bg-blue-50 p-3 text-center">
+                            <p className="text-lg font-black text-blue-600">{notificationSummary.notFinishedOrders}</p>
+                            <p className="text-[10px] font-black uppercase text-blue-500">Belum Selesai</p>
+                          </div>
+                          <div className="rounded-xl bg-red-50 p-3 text-center">
+                            <p className="text-lg font-black text-red-600">{notificationSummary.unpaidOrders}</p>
+                            <p className="text-[10px] font-black uppercase text-red-500">Belum Bayar</p>
+                          </div>
+                          <div className="rounded-xl bg-green-50 p-3 text-center">
+                            <p className="text-lg font-black text-emerald-600">{notificationSummary.readyToPickupOrders}</p>
+                            <p className="text-[10px] font-black uppercase text-emerald-600">Siap Ambil</p>
+                          </div>
+                        </div>
+
+                        <div className="max-h-64 overflow-y-auto px-3 pb-3">
+                          {(!notificationSummary.latestAttentionOrders || notificationSummary.latestAttentionOrders.length === 0) && (
+                            <p className="rounded-xl bg-slate-50 p-4 text-center text-xs font-bold text-slate-400">Tidak ada order yang perlu perhatian.</p>
+                          )}
+
+                          {(notificationSummary.latestAttentionOrders || []).map((order) => (
+                            <button
+                              key={order.orderId}
+                              type="button"
+                              onClick={() => { setActivePage("Data Order"); setNotificationOpen(false); }}
+                              className="mb-2 block w-full rounded-xl bg-slate-50 p-3 text-left transition-all duration-300 hover:bg-green-50"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-xs font-black text-emerald-600">{order.orderId}</p>
+                                <p className="text-[10px] font-black text-slate-400">{order.paymentStatus}</p>
+                              </div>
+                              <p className="mt-1 truncate text-sm font-black text-slate-700">{order.customerName}</p>
+                              <p className="mt-0.5 truncate text-xs font-bold text-slate-400">{order.status} • {order.serviceSummary}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="hidden cursor-pointer items-center gap-3 border-l border-slate-200 pl-3 md:flex">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full border border-emerald-100 bg-green-50 font-black text-emerald-600 transition-all duration-300 hover:scale-105 hover:shadow-md">
@@ -580,8 +777,6 @@
                       <p className="text-sm font-black leading-tight text-slate-800">{displayName}</p>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{displayRole}</p>
                     </div>
-
-                    <span className="material-symbols-outlined text-[18px] text-slate-400">expand_more</span>
                   </div>
 
                   <button
@@ -599,18 +794,6 @@
                     <span className="hidden sm:inline">Tambah Order</span>
                   </button>
                 </div>
-              </div>
-
-              <div className="relative mt-3 md:hidden">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
-                  <span className="material-symbols-outlined text-[22px]">search</span>
-                </span>
-
-                <input
-                  className="block w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-3 text-sm outline-none transition-all duration-300 focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
-                  placeholder="Cari order, customer, atau no. WA..."
-                  type="text"
-                />
               </div>
             </header>
 
@@ -639,6 +822,7 @@
                 refreshKey={dataOrderRefreshKey}
                 onError={(message) => showToast("error", message)}
                 onCreateOrder={() => openOrderBaru(null)}
+                onTrackingChanged={handleOrderTrackingChanged}
               />
             ) : activePage === "Customer" ? (
               <CustomerPage
@@ -675,7 +859,61 @@
             )}
           </main>
         </div>
+
+        <MobileBottomNav
+          menuItems={menuItems}
+          activePage={activePage}
+          setActivePage={(page) => {
+            setPrefillOrder(null);
+            setActivePage(page);
+          }}
+        />
       </div>
+    );
+  }
+
+  function MobileBottomNav({ menuItems, activePage, setActivePage }) {
+    const primaryMenus = [
+      "Dashboard",
+      "Order Baru",
+      "Data Order",
+      "Customer",
+      "Laporan"
+    ];
+
+    const visibleMenus = menuItems.filter(function(item) {
+      return primaryMenus.indexOf(item.label) >= 0;
+    });
+
+    return (
+      <nav className="fixed bottom-3 left-3 right-3 z-50 rounded-3xl border border-slate-200 bg-white/95 px-2 py-2 shadow-2xl shadow-slate-300/40 backdrop-blur lg:hidden">
+        <div className="grid grid-cols-5 gap-1">
+          {visibleMenus.map((item) => {
+            const active = activePage === item.label;
+
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => setActivePage(item.label)}
+                className={
+                  "flex flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[10px] font-black transition-all duration-300 " +
+                  (active
+                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-100"
+                    : "text-slate-500 hover:bg-green-50 hover:text-emerald-600")
+                }
+              >
+                <span className="material-symbols-outlined text-[22px]">
+                  {item.icon}
+                </span>
+                <span className="max-w-full truncate">
+                  {item.label === "Order Baru" ? "Order" : item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     );
   }
 
@@ -1117,7 +1355,7 @@
       };
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -1431,7 +1669,7 @@
     }
   }
 
-  function DataOrderPage({ refreshKey, onError, onCreateOrder }) {
+  function DataOrderPage({ refreshKey, onError, onCreateOrder, onTrackingChanged }) {
     const [orders, setOrders] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [search, setSearch] = React.useState("");
@@ -1443,10 +1681,17 @@
     const [page, setPage] = React.useState(1);
     const [totalRows, setTotalRows] = React.useState(0);
     const [totalPages, setTotalPages] = React.useState(1);
+    const [updatingOrderId, setUpdatingOrderId] = React.useState("");
+    const [settings, setSettings] = React.useState({ businessName: "Laundryku.id" });
+    const [messageTemplates, setMessageTemplates] = React.useState([]);
 
     React.useEffect(function() {
       loadOrders(false);
     }, [page, pageSize, orderType, status, paymentStatus, appliedSearch, refreshKey]);
+
+    React.useEffect(function() {
+      loadMessageTemplates(false);
+    }, []);
 
     function getDataOrderCacheKey() {
       return [
@@ -1486,7 +1731,7 @@
       }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -1520,6 +1765,117 @@
           status: status,
           paymentStatus: paymentStatus
         });
+    }
+
+    function loadMessageTemplates(forceRefresh) {
+      const cacheKey = LAUNDRYKU_CACHE.SETTINGS + "_active_templates";
+
+      if (!forceRefresh) {
+        const cached = readSessionCache(cacheKey);
+        if (cached && cached.success) {
+          setSettings(cached.settings || { businessName: "Laundryku.id" });
+          setMessageTemplates((cached.messageTemplates || []).filter(function(item) { return item.active !== false; }));
+          return;
+        }
+      }
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          if (response && response.success) {
+            setSettings(response.settings || { businessName: "Laundryku.id" });
+            setMessageTemplates((response.messageTemplates || []).filter(function(item) { return item.active !== false; }));
+            writeSessionCache(cacheKey, response);
+          }
+        })
+        .withFailureHandler(function() {})
+        .getAppSettings();
+    }
+
+    function updateOrderField(order, field, value) {
+      if (!order || !order.orderId) return;
+      if (field === "status" && value === order.status) return;
+      if (field === "paymentStatus" && value === order.paymentStatus) return;
+
+      if (typeof google === "undefined" || !google.script || !google.script.run) {
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
+        return;
+      }
+
+      const payload = { orderId: order.orderId };
+      payload[field] = value;
+      setUpdatingOrderId(order.orderId + "_" + field);
+
+      google.script.run
+        .withSuccessHandler(function(response) {
+          setUpdatingOrderId("");
+
+          if (response && response.success) {
+            clearSessionCachesByPrefixes([
+              LAUNDRYKU_CACHE.DATA_ORDER,
+              LAUNDRYKU_CACHE.DASHBOARD,
+              LAUNDRYKU_CACHE.REPORT
+            ]);
+            loadOrders(true);
+            if (onTrackingChanged) onTrackingChanged(response.message);
+          } else {
+            onError((response && response.message) || "Gagal memperbarui tracking order.");
+          }
+        })
+        .withFailureHandler(function(error) {
+          setUpdatingOrderId("");
+          onError((error && error.message) || "Server error saat update tracking order.");
+        })
+        .updateOrderTracking(payload);
+    }
+
+    function normalizeWhatsAppNumber(value) {
+      var number = String(value || "").replace(/\D/g, "");
+      if (!number) return "";
+      if (number.indexOf("0") === 0) return "62" + number.slice(1);
+      if (number.indexOf("62") === 0) return number;
+      return number;
+    }
+
+    function buildWhatsAppMessage(template, order) {
+      var text = template && template.message ? template.message : "Halo {customerName}, order {orderId} saat ini berstatus {status}. Total: {grandTotal}. Sisa pembayaran: {remainingAmount}. Terima kasih, {businessName}.";
+      var replacements = {
+        customerName: order.customerName || "Customer",
+        orderId: order.orderId || "-",
+        status: order.status || "-",
+        paymentStatus: order.paymentStatus || "-",
+        estimatedFinish: order.estimatedFinish || "-",
+        grandTotal: formatCurrency(order.grandTotal),
+        paidAmount: formatCurrency(order.paidAmount),
+        remainingAmount: formatCurrency(order.remainingAmount),
+        businessName: settings.businessName || "Laundryku.id",
+        businessBrand: settings.businessBrand || "Managerku.id",
+        serviceSummary: order.serviceSummary || "-"
+      };
+
+      Object.keys(replacements).forEach(function(key) {
+        text = text.replace(new RegExp("\\{" + key + "\\}", "g"), replacements[key]);
+      });
+
+      return text;
+    }
+
+    function sendWhatsApp(order, templateId) {
+      var number = normalizeWhatsAppNumber(order.whatsapp);
+      if (!number) {
+        onError("Nomor WhatsApp customer belum valid.");
+        return;
+      }
+
+      var template = (messageTemplates || []).find(function(item) {
+        return item.templateId === templateId;
+      }) || (messageTemplates || [])[0];
+
+      var message = buildWhatsAppMessage(template, order);
+      window.open("https://wa.me/" + number + "?text=" + encodeURIComponent(message), "_blank");
     }
 
     function applySearch(event) {
@@ -1697,7 +2053,7 @@
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] text-left">
+            <table className="w-full min-w-[1280px] text-left">
               <thead>
                 <tr className="bg-slate-50/70 text-[10px] font-black uppercase tracking-widest text-slate-400">
                   <th className="px-5 py-4">Order ID</th>
@@ -1710,6 +2066,7 @@
                   <th className="px-5 py-4">Status</th>
                   <th className="px-5 py-4">Estimasi</th>
                   <th className="px-5 py-4">Created By</th>
+                  <th className="px-5 py-4">WA</th>
                   <th className="px-5 py-4"></th>
                 </tr>
               </thead>
@@ -1717,7 +2074,7 @@
               <tbody className="divide-y divide-slate-100">
                 {!loading && orders.length === 0 && (
                   <tr>
-                    <td colSpan="11" className="px-5 py-14 text-center">
+                    <td colSpan="12" className="px-5 py-14 text-center">
                       <div className="mx-auto flex max-w-sm flex-col items-center">
                         <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
                           <span className="material-symbols-outlined text-[34px]">assignment</span>
@@ -1747,17 +2104,44 @@
                     </td>
                     <td className="px-5 py-4 font-black text-slate-800">{formatCurrency(order.grandTotal)}</td>
                     <td className="px-5 py-4">
-                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + paymentClass(order.paymentStatus)}>
-                        {order.paymentStatus}
-                      </span>
+                      <select
+                        value={order.paymentStatus}
+                        disabled={updatingOrderId === order.orderId + "_paymentStatus"}
+                        onChange={(event) => updateOrderField(order, "paymentStatus", event.target.value)}
+                        className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none " + paymentClass(order.paymentStatus)}
+                      >
+                        <option value="Belum Dibayar">Belum Dibayar</option>
+                        <option value="DP">DP</option>
+                        <option value="Lunas">Lunas</option>
+                      </select>
                     </td>
                     <td className="px-5 py-4">
-                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + statusClass(order.status)}>
-                        {order.status}
-                      </span>
+                      <select
+                        value={order.status}
+                        disabled={updatingOrderId === order.orderId + "_status"}
+                        onChange={(event) => updateOrderField(order, "status", event.target.value)}
+                        className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none " + statusClass(order.status)}
+                      >
+                        <option value="Baru">Baru</option>
+                        <option value="Diproses">Diproses</option>
+                        <option value="Selesai">Selesai</option>
+                        <option value="Diambil">Diambil</option>
+                      </select>
                     </td>
                     <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.estimatedFinish}</td>
                     <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdBy}</td>
+                    <td className="px-5 py-4">
+                      <select
+                        defaultValue=""
+                        onChange={(event) => { if (event.target.value) { sendWhatsApp(order, event.target.value); event.target.value = ""; } }}
+                        className="rounded-lg border border-emerald-200 bg-green-50 px-3 py-2 text-xs font-black text-emerald-600 outline-none transition-all duration-300 hover:bg-emerald-500 hover:text-white"
+                      >
+                        <option value="">Kirim WA</option>
+                        {(messageTemplates || []).map((template) => (
+                          <option key={template.templateId} value={template.templateId}>{template.templateName}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td className="px-5 py-4">
                       <button
                         type="button"
@@ -1847,7 +2231,7 @@
       }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -2682,7 +3066,7 @@
       }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -2784,7 +3168,7 @@
       }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -2826,7 +3210,7 @@
 
     function toggleService(service) {
       if (typeof google === "undefined" || !google.script || !google.script.run) {
-        onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl.");
+        onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
@@ -3233,7 +3617,7 @@
         }
       }
 
-      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia. Cek konfigurasi apiUrl."); return; }
+      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("google.script.run belum tersedia. Jalankan lewat Web App GAS."); return; }
       setLoading(true);
       google.script.run
         .withSuccessHandler(function(response) {
@@ -3254,7 +3638,7 @@
     function closeModal() { setModalOpen(false); setSaving(false); setEditingExpense(null); setForm(getDefaultForm()); }
     function submitExpense(event) {
       event.preventDefault();
-      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; }
+      if (typeof google === "undefined" || !google.script || !google.script.run) { onError("google.script.run belum tersedia."); return; }
       const payload = Object.assign({}, form, { amount: Number(form.amount || 0), createdBy: user && user.name ? user.name : "Administrator" });
       setSaving(true);
       const runner = google.script.run.withSuccessHandler(function(response) { setSaving(false); if (response && response.success) { closeModal(); clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.EXPENSE]); onSaved(response.message); loadExpenses(true); } else { onError((response && response.message) || "Gagal menyimpan pengeluaran."); } }).withFailureHandler(function(error) { setSaving(false); onError((error && error.message) || "Server error."); });
@@ -3295,7 +3679,7 @@
     React.useEffect(function() { loadReport(false); }, [period]);
     function formatCurrency(value) { return "Rp " + Number(value || 0).toLocaleString("id-ID"); }
     function getReportCacheKey() { return [LAUNDRYKU_CACHE.REPORT, period, startDate, endDate].join("_"); }
-    function loadReport(forceRefresh) { const cacheKey = getReportCacheKey(); if (!forceRefresh) { const cachedResponse = readSessionCache(cacheKey); if (cachedResponse && cachedResponse.success) { setReport(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { setReport(response); writeSessionCache(cacheKey, response); } else onError((response && response.message) || "Gagal mengambil laporan."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getReportsSummary({ period, startDate, endDate }); }
+    function loadReport(forceRefresh) { const cacheKey = getReportCacheKey(); if (!forceRefresh) { const cachedResponse = readSessionCache(cacheKey); if (cachedResponse && cachedResponse.success) { setReport(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("google.script.run belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { setReport(response); writeSessionCache(cacheKey, response); } else onError((response && response.message) || "Gagal mengambil laporan."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getReportsSummary({ period, startDate, endDate }); }
     const s = report.summary || {};
     return <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6"><PageHeader eyebrow="Business Report" title="Laporan" description="Income, expense, cashflow, profit, top services, dan top expense dalam satu halaman." actionLabel="Refresh Laporan" actionIcon="refresh" onAction={() => loadReport(true)} loading={loading} /><div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid grid-cols-1 gap-4 md:grid-cols-[200px_1fr_1fr_auto]"><select className="filter-select" value={period} onChange={(e) => setPeriod(e.target.value)}><option value="today">Hari Ini</option><option value="7days">7 Hari Terakhir</option><option value="month">Bulan Ini</option><option value="lastMonth">Bulan Lalu</option><option value="custom">Custom</option></select><input type="date" className="form-input" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={period !== "custom"} /><input type="date" className="form-input" value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={period !== "custom"} /><button onClick={() => loadReport(true)} className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-black text-white">Terapkan</button></div></div><div className="grid grid-cols-1 gap-4 md:grid-cols-4"><StatCard icon="payments" iconClass="bg-emerald-600" title="Total Omzet" value={formatCurrency(s.totalRevenue)} note={`${s.totalOrders || 0} order`} /><StatCard icon="account_balance_wallet" iconClass="bg-orange-400" title="Pengeluaran" value={formatCurrency(s.totalExpense)} note={`${s.totalExpenses || 0} transaksi`} /><StatCard icon="trending_up" iconClass="bg-green-800" title="Profit by Omzet" value={formatCurrency(s.netProfitByRevenue)} note={`${Number(s.profitMarginRevenue || 0).toFixed(1)}% margin`} /><StatCard icon="savings" iconClass="bg-lime-600" title="Profit by Cash" value={formatCurrency(s.netProfitByCash)} note={`${Number(s.profitMarginCash || 0).toFixed(1)}% margin`} /></div><div className="grid grid-cols-1 gap-4 md:grid-cols-3"><StatCard icon="paid" iconClass="bg-green-600" title="Cash Masuk" value={formatCurrency(s.totalPaid)} note="paid amount" /><StatCard icon="hourglass_bottom" iconClass="bg-red-400" title="Belum Dibayar" value={formatCurrency(s.totalRemaining)} note="remaining amount" /><StatCard icon="summarize" iconClass="bg-purple-500" title="Periode" value={(report.range && report.range.label) || "-"} note="filter aktif" /></div><SimpleDualBars title="Income vs Expense" data={report.incomeExpenseSeries || []} formatCurrency={formatCurrency} /><div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><RankCard title="Top Services by Revenue" items={report.topServices || []} nameKey="serviceName" valueKey="revenue" subKey="qty" subSuffix=" qty" formatCurrency={formatCurrency} /><RankCard title="Top Expense Categories" items={report.topExpenseCategories || []} nameKey="category" valueKey="amount" subKey="count" subSuffix=" transaksi" formatCurrency={formatCurrency} /></div><div className="grid grid-cols-1 gap-6 lg:grid-cols-2"><BreakdownList title="Status Order" items={report.orderStatusBreakdown || []} /><BreakdownList title="Status Pembayaran" items={report.paymentStatusBreakdown || []} /></div></div>;
   }
@@ -3311,7 +3695,7 @@
     const [templateForm, setTemplateForm] = React.useState({ templateId: "", templateName: "", message: "", active: true });
     React.useEffect(function() { loadSettings(false); }, []);
     function applySettingsResponse(response) { setSettings(Object.assign({}, settings, response.settings || {})); setPaymentMethods(response.paymentMethods || []); setTemplates(response.messageTemplates || []); }
-    function loadSettings(forceRefresh) { if (!forceRefresh) { const cachedResponse = readSessionCache(LAUNDRYKU_CACHE.SETTINGS); if (cachedResponse && cachedResponse.success) { applySettingsResponse(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("API Managerku.id belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { applySettingsResponse(response); writeSessionCache(LAUNDRYKU_CACHE.SETTINGS, response); } else onError((response && response.message) || "Gagal mengambil settings."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getAppSettings(); }
+    function loadSettings(forceRefresh) { if (!forceRefresh) { const cachedResponse = readSessionCache(LAUNDRYKU_CACHE.SETTINGS); if (cachedResponse && cachedResponse.success) { applySettingsResponse(cachedResponse); return; } } if (typeof google === "undefined" || !google.script || !google.script.run) { onError("google.script.run belum tersedia."); return; } setLoading(true); google.script.run.withSuccessHandler(function(response) { setLoading(false); if (response && response.success) { applySettingsResponse(response); writeSessionCache(LAUNDRYKU_CACHE.SETTINGS, response); } else onError((response && response.message) || "Gagal mengambil settings."); }).withFailureHandler(function(error) { setLoading(false); onError((error && error.message) || "Server error."); }).getAppSettings(); }
     function updateSetting(key, value) { setSettings(Object.assign({}, settings, { [key]: value })); }
     function saveProfile(event) { event.preventDefault(); setSaving(true); google.script.run.withSuccessHandler(function(response) { setSaving(false); if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); loadSettings(true); } else onError((response && response.message) || "Gagal menyimpan settings."); }).withFailureHandler(function(error) { setSaving(false); onError((error && error.message) || "Server error."); }).saveBusinessSettings({ settings }); }
     function addPaymentMethod() { if (!newPaymentMethod.trim()) { onError("Nama metode pembayaran wajib diisi."); return; } google.script.run.withSuccessHandler(function(response) { if (response && response.success) { clearSessionCachesByPrefixes([LAUNDRYKU_CACHE.SETTINGS]); onSaved(response.message); setNewPaymentMethod(""); loadSettings(true); } else onError((response && response.message) || "Gagal menyimpan metode."); }).savePaymentMethod({ name: newPaymentMethod.trim(), active: true }); }
@@ -3612,3 +3996,167 @@
       </div>
     );
   }
+</script>
+
+<style>
+  .chart-placeholder {
+    background: linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+
+  .form-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 0.75rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .form-input:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .quick-input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .quick-input:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .filter-select {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    padding: 0.75rem 0.875rem;
+    font-size: 0.875rem;
+    font-weight: 800;
+    color: #475569;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  .filter-select:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+  }
+
+  .pagination-control {
+    display: flex;
+    height: 2rem;
+    width: 2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    transition: all 0.25s ease;
+  }
+
+  .pagination-control:hover:not(:disabled) {
+    background: #f8fafc;
+    transform: translateY(-1px);
+  }
+
+  .pagination-control:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes toastIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spin {
+    animation: spin 0.9s linear infinite;
+  }
+</style>
+<script type="text/babel">
+  function LaundrykuDashboardBootstrap() {
+    const [session, setSession] = React.useState(function() {
+      return laundrykuReadSession();
+    });
+
+    React.useEffect(function() {
+      if (!session || !session.user || !session.token) {
+        window.location.href = laundrykuGetIndexUrl();
+      }
+    }, [session]);
+
+    if (!session || !session.user || !session.token) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-center">
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+            <span className="material-symbols-outlined spin text-[36px] text-emerald-500">progress_activity</span>
+            <p className="mt-3 text-sm font-black text-slate-600">Mengecek session...</p>
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <DashboardApp
+        user={session.user}
+        onLogout={function() {
+          laundrykuCallApi("logout", { token: session.token }).catch(function() {});
+          laundrykuClearSession();
+          setSession(null);
+          window.location.href = laundrykuGetIndexUrl();
+        }}
+      />
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById("root")).render(<LaundrykuDashboardBootstrap />);
+</script>
+</body>
+</html>
