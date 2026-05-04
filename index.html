@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Managerku.id - Login</title>
+  <title>Laundryku - Login</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -141,114 +141,65 @@
 <body>
   <div id="root"></div>
 
-  <script>
-    window.MANAGERKU_CONFIG = {
-      clientId: "demo-client",
-      apiUrl: "https://script.google.com/macros/s/AKfycbxSTA7xWFJzEAsWxcRxnQR5tSrOrnOyehHY-9tOudy45rkfkykaRy3RdaOxKxWj_tcsQw/exec",
-      frontendVersion: "2026.05.03.2"
-    };
-
-    function apiCall(action, payload) {
-      const config = window.MANAGERKU_CONFIG || {};
-      const apiUrl = String(config.apiUrl || "").trim();
-
-      if (!apiUrl || apiUrl.indexOf("https://script.google.com/macros/s/") !== 0) {
-        return Promise.reject(
-          new Error("GAS Web App API URL belum valid di MANAGERKU_CONFIG.apiUrl.")
-        );
-      }
-
-      return fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain;charset=utf-8"
-        },
-        body: JSON.stringify({
-          action: action,
-          payload: payload || {},
-          clientId: config.clientId || "",
-          frontendVersion: config.frontendVersion || ""
-        })
-      })
-        .then(function(response) {
-          if (!response.ok) {
-            throw new Error("HTTP " + response.status + " saat memanggil API Managerku.id.");
-          }
-
-          return response.text();
-        })
-        .then(function(text) {
-          try {
-            return JSON.parse(text);
-          } catch (error) {
-            console.error("Invalid API response:", text);
-            throw new Error("Response API bukan JSON valid. Cek deploy Code.gs doPost.");
-          }
-        });
-    }
-
-    window.apiCall = apiCall;
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
 
     /**
-     * google.script.run compatibility shim.
-     * This keeps existing dashboard.html code working from GitHub Pages.
+     * IMPORTANT:
+     * Replace this with your deployed Google Apps Script Web App /exec URL.
+     * Example:
+     * const API_URL = "https://script.google.com/macros/s/AKfycbxxxxxxxxxxxxxxxxxxxxxxxx/exec";
      */
-    window.google = window.google || {};
-    window.google.script = window.google.script || {};
-
-    function createGoogleScriptRunShim(state) {
-      const currentState = state || {};
-
-      return new Proxy({}, {
-        get: function(_, prop) {
-          if (prop === "withSuccessHandler") {
-            return function(handler) {
-              return createGoogleScriptRunShim(Object.assign({}, currentState, {
-                successHandler: handler
-              }));
-            };
-          }
-
-          if (prop === "withFailureHandler") {
-            return function(handler) {
-              return createGoogleScriptRunShim(Object.assign({}, currentState, {
-                failureHandler: handler
-              }));
-            };
-          }
-
-          return function(payload) {
-            apiCall(String(prop), payload || {})
-              .then(function(response) {
-                if (typeof currentState.successHandler === "function") {
-                  currentState.successHandler(response);
-                }
-              })
-              .catch(function(error) {
-                if (typeof currentState.failureHandler === "function") {
-                  currentState.failureHandler(error);
-                } else {
-                  console.error(error);
-                }
-              });
-          };
-        }
-      });
-    }
-
-    window.google.script.run = createGoogleScriptRunShim();
-  </script>
-
-  <!-- Dashboard frontend from GitHub repo -->
-  <script type="text/babel" src="./dashboard.html?v=20260503-2"></script>
-
-  <script type="text/babel">
-    const { useEffect, useState } = React;
+    const API_URL = "https://script.google.com/macros/s/AKfycbwETE_EaYK8HFFWMif2x-HX832LJNqO2UyC5XFI4Hc86NdCasvsYYYL7kgt9lISGXgipg/exec";
 
     const SESSION_KEY = "laundryku_user_session";
+    const TOKEN_KEY = "laundryku_session_token";
     const USERNAME_KEY = "laundryku_username";
     const ACTIVE_PAGE_KEY = "laundryku_active_page";
-    const SESSION_EXPIRES_MS = 1000 * 60 * 60 * 12;
+    const SESSION_EXPIRES_MS = 1000 * 60 * 60 * 12; // local fallback, 12 hours
+
+    function isApiConfigured() {
+      return Boolean(API_URL && API_URL.indexOf("https://script.google.com/macros/s/") === 0 && API_URL.indexOf("/exec") > -1);
+    }
+
+    function normalizeBasePath() {
+      const path = window.location.pathname || "/";
+      const fileNamePattern = /\/[^/]*\.html$/i;
+      return fileNamePattern.test(path) ? path.replace(fileNamePattern, "/") : path.endsWith("/") ? path : path + "/";
+    }
+
+    function getDashboardUrl() {
+      return normalizeBasePath() + "dashboard.html";
+    }
+
+    async function callApi(action, payload) {
+      if (!isApiConfigured()) {
+        throw new Error("API_URL belum diisi. Paste URL Web App GAS /exec ke file index.html.");
+      }
+
+      const requestBody = JSON.stringify({
+        action: action,
+        ...(payload || {})
+      });
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        body: requestBody,
+        redirect: "follow"
+      });
+
+      const text = await response.text();
+
+      if (!text) {
+        throw new Error("Server tidak mengembalikan response.");
+      }
+
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        throw new Error("Response server bukan JSON valid. Pastikan GAS sudah dideploy sebagai Web App API.");
+      }
+    }
 
     function getSavedSession() {
       try {
@@ -260,35 +211,41 @@
 
         const session = JSON.parse(rawSession);
 
-        if (!session || !session.user || !session.savedAt) {
+        if (!session || !session.user || !session.token || !session.savedAt) {
           localStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(TOKEN_KEY);
           return null;
         }
 
-        const isExpired = Date.now() - Number(session.savedAt) > SESSION_EXPIRES_MS;
+        const isExpiredByLocalFallback = Date.now() - Number(session.savedAt) > SESSION_EXPIRES_MS;
+        const isExpiredByServerValue = session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now();
 
-        if (isExpired) {
+        if (isExpiredByLocalFallback || isExpiredByServerValue) {
           localStorage.removeItem(SESSION_KEY);
+          localStorage.removeItem(TOKEN_KEY);
           return null;
         }
 
-        return session.user;
+        return session;
 
       } catch (error) {
         localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         return null;
       }
     }
 
-    function saveSession(user) {
+    function saveSession(response) {
       try {
-        localStorage.setItem(
-          SESSION_KEY,
-          JSON.stringify({
-            user: user,
-            savedAt: Date.now()
-          })
-        );
+        const session = {
+          user: response.user,
+          token: response.token,
+          expiresAt: response.expiresAt || "",
+          savedAt: Date.now()
+        };
+
+        localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        localStorage.setItem(TOKEN_KEY, response.token || "");
       } catch (error) {
         console.warn("Unable to save session:", error);
       }
@@ -297,10 +254,14 @@
     function clearSession() {
       try {
         localStorage.removeItem(SESSION_KEY);
+        localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ACTIVE_PAGE_KEY);
 
         Object.keys(sessionStorage).forEach(function(key) {
-          if (key.indexOf("laundryku_") === 0) {
+          if (
+            key.indexOf("laundryku_data_order_cache") === 0 ||
+            key.indexOf("laundryku_customer_cache") === 0
+          ) {
             sessionStorage.removeItem(key);
           }
         });
@@ -310,7 +271,7 @@
     }
 
     function LoginApp() {
-      const savedSession = getSavedSession();
+      const savedSession = useMemo(() => getSavedSession(), []);
 
       const [username, setUsername] = useState("");
       const [password, setPassword] = useState("");
@@ -319,8 +280,6 @@
       const [loading, setLoading] = useState(false);
       const [message, setMessage] = useState("");
       const [messageType, setMessageType] = useState("");
-      const [currentPage, setCurrentPage] = useState(savedSession ? "dashboard" : "login");
-      const [loggedInUser, setLoggedInUser] = useState(savedSession);
 
       useEffect(() => {
         const savedUsername = localStorage.getItem(USERNAME_KEY);
@@ -331,7 +290,13 @@
         }
       }, []);
 
-      function handleSubmit(event) {
+      useEffect(() => {
+        if (savedSession && savedSession.user && savedSession.token) {
+          window.location.replace(getDashboardUrl());
+        }
+      }, [savedSession]);
+
+      async function handleSubmit(event) {
         event.preventDefault();
 
         setMessage("");
@@ -343,64 +308,44 @@
           return;
         }
 
-        if (typeof apiCall !== "function") {
-          setMessage("API Managerku.id belum tersedia. Cek MANAGERKU_CONFIG.apiUrl.");
-          setMessageType("error");
-          return;
-        }
-
         setLoading(true);
 
-        apiCall("loginUser", {
-          username: username.trim(),
-          password: password,
-          remember: remember
-        })
-          .then(function(response) {
-            setLoading(false);
-
-            if (response && response.success) {
-              if (remember) {
-                localStorage.setItem(USERNAME_KEY, username.trim());
-              } else {
-                localStorage.removeItem(USERNAME_KEY);
-              }
-
-              setMessage(response.message || "Login berhasil.");
-              setMessageType("success");
-              setLoggedInUser(response.user);
-              saveSession(response.user);
-
-              setTimeout(function() {
-                setCurrentPage("dashboard");
-              }, 300);
-
-            } else {
-              setMessage((response && response.message) || "Username atau password salah.");
-              setMessageType("error");
-            }
-          })
-          .catch(function(error) {
-            setLoading(false);
-            setMessage((error && error.message) || "Terjadi error pada server.");
-            setMessageType("error");
+        try {
+          const response = await callApi("login", {
+            username: username.trim(),
+            password: password,
+            remember: remember
           });
-      }
 
-      if (currentPage === "dashboard") {
-        return (
-          <DashboardApp
-            user={loggedInUser}
-            onLogout={() => {
-              clearSession();
-              setCurrentPage("login");
-              setLoggedInUser(null);
-              setPassword("");
-              setMessage("");
-              setMessageType("");
-            }}
-          />
-        );
+          if (response && response.success && response.user && response.token) {
+            if (remember) {
+              localStorage.setItem(USERNAME_KEY, username.trim());
+            } else {
+              localStorage.removeItem(USERNAME_KEY);
+            }
+
+            saveSession(response);
+            setMessage(response.message || "Login berhasil.");
+            setMessageType("success");
+
+            setTimeout(function() {
+              window.location.href = getDashboardUrl();
+            }, 400);
+
+          } else {
+            clearSession();
+            setMessage((response && response.message) || "Username atau password salah.");
+            setMessageType("error");
+          }
+
+        } catch (error) {
+          clearSession();
+          setMessage((error && error.message) || "Terjadi error pada server.");
+          setMessageType("error");
+
+        } finally {
+          setLoading(false);
+        }
       }
 
       return (
@@ -429,40 +374,40 @@
                       local_laundry_service
                     </span>
                     <span className="font-h2 text-2xl font-bold tracking-tight text-on-primary">
-                      Managerku.id
+                      Laundryku
                     </span>
                   </div>
 
                   <div className="mt-1 flex items-center gap-1 opacity-80">
                     <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-on-primary">
-                      Laundry Management System
+                      supported by MJ
                     </span>
                   </div>
                 </div>
 
                 <div className="relative z-10">
                   <h1 className="mb-4 max-w-md font-h1 text-3xl font-extrabold leading-tight tracking-tight text-on-primary lg:text-[32px]">
-                    Sistem digital sederhana untuk laundry UMKM.
+                    The future of laundry management is here.
                   </h1>
                   <p className="max-w-md text-base leading-relaxed text-on-primary/90 lg:text-lg">
-                    Kelola order, customer, pembayaran, pengeluaran, laporan, dan WhatsApp reminder dalam satu dashboard.
+                    Experience the most efficient way to track orders, manage customers, and scale your laundry business with precision.
                   </p>
                 </div>
 
                 <div className="relative z-10 flex gap-6">
                   <div className="flex flex-col">
-                    <span className="font-h3 text-2xl font-bold text-on-primary">UMKM</span>
+                    <span className="font-h3 text-2xl font-bold text-on-primary">15k+</span>
                     <span className="text-[11px] font-medium uppercase tracking-widest text-on-primary/70">
-                      Friendly
+                      Orders Processed
                     </span>
                   </div>
 
                   <div className="h-10 w-px self-center bg-on-primary/20"></div>
 
                   <div className="flex flex-col">
-                    <span className="font-h3 text-2xl font-bold text-on-primary">99K</span>
+                    <span className="font-h3 text-2xl font-bold text-on-primary">99.9%</span>
                     <span className="text-[11px] font-medium uppercase tracking-widest text-on-primary/70">
-                      Support Bulanan
+                      Uptime Reliable
                     </span>
                   </div>
                 </div>
@@ -476,13 +421,13 @@
                       local_laundry_service
                     </span>
                     <span className="font-h2 text-2xl font-bold tracking-tight text-primary">
-                      Managerku.id
+                      Laundryku
                     </span>
                   </div>
 
                   <div className="mt-1 flex items-center justify-center gap-1 opacity-70">
                     <span className="text-[10px] font-medium uppercase tracking-[0.2em] text-primary">
-                      Laundry Management System
+                      supported by MJ
                     </span>
                   </div>
                 </div>
@@ -492,7 +437,7 @@
                     Welcome back
                   </h2>
                   <p className="text-sm leading-relaxed text-on-surface-variant sm:text-base">
-                    Masuk untuk mengakses dashboard Managerku.id.
+                    Please enter your details to access your dashboard.
                   </p>
                 </div>
 
@@ -541,7 +486,7 @@
                       <button
                         type="button"
                         className="text-xs font-medium text-primary transition-all hover:underline sm:text-sm"
-                        onClick={() => alert("Hubungi admin Managerku.id untuk reset password.")}
+                        onClick={() => alert("Hubungi admin untuk reset password.")}
                       >
                         Forgot Password?
                       </button>
@@ -606,7 +551,15 @@
           </div>
 
           <footer className="relative z-10 px-4 pb-6 text-center text-xs font-medium text-outline/60 sm:text-sm md:fixed md:bottom-6 md:left-1/2 md:w-full md:-translate-x-1/2 md:px-6 md:pb-0">
-            © 2026 Managerku.id Laundry Management System. All rights reserved.
+            © 2026 Laundryku Laundry Management Systems. All rights reserved.
+            <span className="mx-2 hidden sm:inline">|</span>
+            <a className="block transition-colors hover:text-primary sm:inline" href="#">
+              Privacy Policy
+            </a>
+            <span className="mx-2 hidden sm:inline">|</span>
+            <a className="block transition-colors hover:text-primary sm:inline" href="#">
+              Terms of Service
+            </a>
           </footer>
         </main>
       );
