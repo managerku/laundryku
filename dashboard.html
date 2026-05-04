@@ -44,7 +44,7 @@
    * Replace this with your deployed Google Apps Script Web App /exec URL.
    * Keep this value the same as the API_URL in index.html.
    */
-  window.LAUNDRYKU_API_URL = "https://script.google.com/macros/s/AKfycbwETE_EaYK8HFFWMif2x-HX832LJNqO2UyC5XFI4Hc86NdCasvsYYYL7kgt9lISGXgipg/exec";
+  window.LAUNDRYKU_API_URL = "https://script.google.com/macros/s/AKfycbz4XqUE-QXlmBEWw_x5MTWJNbemSYzdT_rHSHhue-2f_GOV5sl3iiGjUKAqP8981eaUrg/exec";
 
   window.LAUNDRYKU_SESSION_KEY = "laundryku_user_session";
   window.LAUNDRYKU_TOKEN_KEY = "laundryku_session_token";
@@ -235,6 +235,117 @@
     });
   }
 
+  function buildOrderServiceSummaryFromPayload(payload) {
+    var items = (payload && payload.items) || [];
+
+    if (!items.length) {
+      return "-";
+    }
+
+    return items.map(function(item) {
+      var serviceName = item.serviceName || item.name || item.serviceId || "Layanan";
+      var qty = Number(item.qty || 0);
+      var unit = item.unit || "unit";
+      return serviceName + " (" + qty + " " + unit + ")";
+    }).join(", ");
+  }
+
+  function calculateOrderTotalsFromPayload(payload) {
+    var items = (payload && payload.items) || [];
+    var subtotal = items.reduce(function(total, item) {
+      return total + Number(item.price || 0) * Number(item.qty || 0);
+    }, 0);
+    var discount = Number((payload && payload.discount) || 0);
+    var additionalFee = Number((payload && payload.additionalFee) || 0);
+    var paidAmount = Number((payload && payload.paidAmount) || 0);
+    var grandTotal = subtotal - discount + additionalFee;
+    var remainingAmount = grandTotal - paidAmount;
+
+    return {
+      subtotal: subtotal,
+      discount: discount,
+      additionalFee: additionalFee,
+      grandTotal: grandTotal,
+      paidAmount: paidAmount,
+      remainingAmount: remainingAmount
+    };
+  }
+
+  function buildOptimisticOrderFromPayload(payload) {
+    var now = new Date();
+    var totals = calculateOrderTotalsFromPayload(payload || {});
+    var tempKey = "TMP-" + now.getTime() + "-" + Math.floor(Math.random() * 100000);
+
+    return {
+      tempKey: tempKey,
+      orderId: "SYNCING...",
+      orderType: String((payload && payload.orderType) || "new"),
+      customerName: String((payload && payload.customerName) || "").trim(),
+      whatsapp: String((payload && payload.whatsapp) || "").trim(),
+      address: String((payload && payload.address) || "").trim(),
+      status: "Baru",
+      paymentStatus: String((payload && payload.paymentStatus) || "Belum Dibayar"),
+      paymentMethod: String((payload && payload.paymentMethod) || "Cash"),
+      subtotal: totals.subtotal,
+      discount: totals.discount,
+      additionalFee: totals.additionalFee,
+      grandTotal: totals.grandTotal,
+      paidAmount: totals.paidAmount,
+      remainingAmount: totals.remainingAmount,
+      estimatedFinish: String((payload && payload.estimatedFinish) || "").trim(),
+      notes: String((payload && payload.notes) || "").trim(),
+      createdBy: String((payload && payload.createdBy) || "Administrator"),
+      serviceSummary: buildOrderServiceSummaryFromPayload(payload || {}),
+      createdAt: "Baru saja",
+      createdAtSort: now.getTime(),
+      syncStatus: "pending",
+      syncMessage: "Menyinkronkan ke Google Sheets...",
+      originalPayload: payload || {}
+    };
+  }
+
+  function normalizeSavedOrderResponse(response, fallbackOrder) {
+    var order = response && response.order ? response.order : null;
+
+    if (!order) {
+      order = Object.assign({}, fallbackOrder || {}, {
+        orderId: response && response.orderId ? response.orderId : (fallbackOrder && fallbackOrder.orderId ? fallbackOrder.orderId : "-"),
+        grandTotal: response && response.grandTotal !== undefined ? response.grandTotal : (fallbackOrder && fallbackOrder.grandTotal),
+        remainingAmount: response && response.remainingAmount !== undefined ? response.remainingAmount : (fallbackOrder && fallbackOrder.remainingAmount)
+      });
+    }
+
+    return Object.assign({}, fallbackOrder || {}, order, {
+      syncStatus: "synced",
+      syncMessage: "Tersimpan di Google Sheets",
+      originalPayload: fallbackOrder && fallbackOrder.originalPayload ? fallbackOrder.originalPayload : null
+    });
+  }
+
+  function mergePendingOrdersWithFetchedOrders(pendingOrders, fetchedOrders) {
+    var merged = [];
+    var seen = {};
+
+    (pendingOrders || []).forEach(function(order) {
+      if (!order) return;
+      var key = String(order.orderId || order.tempKey || "");
+      if (key && !seen[key]) {
+        merged.push(order);
+        seen[key] = true;
+      }
+    });
+
+    (fetchedOrders || []).forEach(function(order) {
+      if (!order) return;
+      var key = String(order.orderId || order.tempKey || "");
+      if (key && seen[key]) return;
+      merged.push(order);
+      if (key) seen[key] = true;
+    });
+
+    return merged;
+  }
+
   function DashboardApp({ user, onLogout }) {
     const ACTIVE_PAGE_KEY = "laundryku_active_page";
     const SERVICE_CACHE_KEY = "laundryku_service_catalog_cache";
@@ -258,6 +369,7 @@
       latestAttentionOrders: []
     });
     const [currentDateLabel, setCurrentDateLabel] = React.useState(formatCurrentDate());
+    const [pendingOrders, setPendingOrders] = React.useState([]);
 
     const displayName = user && user.name ? user.name : "Administrator";
     const displayRole = user && user.role ? user.role : "admin";
@@ -473,41 +585,91 @@
       setActivePage("Order Baru");
     }
 
-    function handleOrderSaved(response) {
-      showToast("success", "Order berhasil disimpan: " + response.orderId);
+    function handleOrderSaved(response, tempKey) {
+      var messageOrderId = response && response.orderId ? response.orderId : "order";
+      showToast("success", "Order berhasil disimpan: " + messageOrderId);
       setPrefillOrder(null);
 
       clearTableCaches();
 
-      setDataOrderRefreshKey(function(value) {
-        return value + 1;
-      });
+      if (tempKey) {
+        setPendingOrders(function(currentOrders) {
+          return currentOrders.map(function(order) {
+            if (order.tempKey !== tempKey) return order;
+            return normalizeSavedOrderResponse(response, order);
+          });
+        });
+      }
 
       setCustomerRefreshKey(function(value) {
         return value + 1;
       });
 
+      loadHeaderNotification();
+
+      setTimeout(function() {
+        setDataOrderRefreshKey(function(value) {
+          return value + 1;
+        });
+      }, 1200);
+
       setActivePage("Data Order");
     }
 
-    function handleQuickSave(payload) {
+    function handleOrderSaveFailed(tempKey, errorMessage) {
+      setPendingOrders(function(currentOrders) {
+        return currentOrders.map(function(order) {
+          if (order.tempKey !== tempKey) return order;
+          return Object.assign({}, order, {
+            syncStatus: "failed",
+            syncMessage: errorMessage || "Gagal menyimpan ke Google Sheets."
+          });
+        });
+      });
+
+      showToast("error", errorMessage || "Gagal menyimpan order.");
+      setActivePage("Data Order");
+    }
+
+    function handleOrderSubmit(payload) {
       if (typeof google === "undefined" || !google.script || !google.script.run) {
         showToast("error", "google.script.run belum tersedia. Jalankan lewat Web App GAS.");
         return;
       }
 
+      var optimisticOrder = buildOptimisticOrderFromPayload(payload);
+      var tempKey = optimisticOrder.tempKey;
+
+      setPendingOrders(function(currentOrders) {
+        return [optimisticOrder].concat(currentOrders || []);
+      });
+
+      setPrefillOrder(null);
+      clearSessionCachesByPrefixes([
+        LAUNDRYKU_CACHE.DATA_ORDER,
+        LAUNDRYKU_CACHE.DASHBOARD,
+        LAUNDRYKU_CACHE.CUSTOMER,
+        LAUNDRYKU_CACHE.REPORT
+      ]);
+      setActivePage("Data Order");
+      showToast("success", "Order sedang disimpan. Kamu bisa lanjut kerja sambil sinkronisasi berjalan.");
+
       google.script.run
         .withSuccessHandler(function(response) {
           if (response && response.success) {
-            handleOrderSaved(response);
+            handleOrderSaved(response, tempKey);
           } else {
-            showToast("error", (response && response.message) || "Gagal menyimpan order.");
+            handleOrderSaveFailed(tempKey, (response && response.message) || "Gagal menyimpan order.");
           }
         })
         .withFailureHandler(function(error) {
-          showToast("error", (error && error.message) || "Server error.");
+          handleOrderSaveFailed(tempKey, (error && error.message) || "Server error.");
         })
         .saveOrder(payload);
+    }
+
+    function handleQuickSave(payload) {
+      handleOrderSubmit(payload);
     }
 
     function handleServicesChanged(message) {
@@ -815,11 +977,13 @@
                 prefill={prefillOrder}
                 onCancel={() => setActivePage("Dashboard")}
                 onSaved={handleOrderSaved}
+                onSubmitOrder={handleOrderSubmit}
                 onError={(message) => showToast("error", message)}
               />
             ) : activePage === "Data Order" ? (
               <DataOrderPage
                 refreshKey={dataOrderRefreshKey}
+                pendingOrders={pendingOrders}
                 onError={(message) => showToast("error", message)}
                 onCreateOrder={() => openOrderBaru(null)}
                 onTrackingChanged={handleOrderTrackingChanged}
@@ -1190,7 +1354,7 @@
     );
   }
 
-  function OrderBaruPage({ user, services, prefill, onCancel, onSaved, onError }) {
+  function OrderBaruPage({ user, services, prefill, onCancel, onSaved, onSubmitOrder, onError }) {
     const defaultService = services && services.length ? services[0] : null;
 
     const [orderType, setOrderType] = React.useState(prefill && prefill.orderType ? prefill.orderType : "new");
@@ -1353,6 +1517,17 @@
           };
         })
       };
+
+      if (typeof onSubmitOrder === "function") {
+        if (typeof google === "undefined" || !google.script || !google.script.run) {
+          onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
+          return;
+        }
+
+        setSaving(true);
+        onSubmitOrder(payload);
+        return;
+      }
 
       if (typeof google === "undefined" || !google.script || !google.script.run) {
         onError("google.script.run belum tersedia. Jalankan lewat Web App GAS.");
@@ -1669,7 +1844,7 @@
     }
   }
 
-  function DataOrderPage({ refreshKey, onError, onCreateOrder, onTrackingChanged }) {
+  function DataOrderPage({ refreshKey, pendingOrders, onError, onCreateOrder, onTrackingChanged }) {
     const [orders, setOrders] = React.useState([]);
     const [loading, setLoading] = React.useState(false);
     const [search, setSearch] = React.useState("");
@@ -1940,8 +2115,11 @@
       return buildPageNumbers(page, totalPages);
     }
 
-    const firstRow = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
-    const lastRow = Math.min(page * pageSize, totalRows);
+    const displayOrders = mergePendingOrdersWithFetchedOrders(pendingOrders, orders);
+    const pendingVisibleCount = (pendingOrders || []).length;
+    const displayedTotalRows = totalRows + pendingVisibleCount;
+    const firstRow = displayedTotalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+    const lastRow = Math.min(page * pageSize + pendingVisibleCount, displayedTotalRows);
 
     return (
       <div className="animate-[fadeIn_.35s_ease-out] space-y-6 p-4 lg:p-6">
@@ -2040,7 +2218,7 @@
             <div>
               <h3 className="font-black text-slate-800">Semua Order</h3>
               <p className="mt-1 text-xs font-bold text-slate-400">
-                Menampilkan {firstRow}–{lastRow} dari {totalRows} order
+                Menampilkan {firstRow}–{lastRow} dari {displayedTotalRows} order
               </p>
             </div>
 
@@ -2072,7 +2250,7 @@
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {!loading && orders.length === 0 && (
+                {!loading && displayOrders.length === 0 && (
                   <tr>
                     <td colSpan="12" className="px-5 py-14 text-center">
                       <div className="mx-auto flex max-w-sm flex-col items-center">
@@ -2086,74 +2264,112 @@
                   </tr>
                 )}
 
-                {orders.map((order) => (
-                  <tr key={order.orderId} className="group text-sm transition-all duration-300 hover:bg-slate-50">
-                    <td className="px-5 py-4 font-black text-emerald-600">{order.orderId}</td>
-                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdAt}</td>
-                    <td className="px-5 py-4">
-                      <p className="font-black text-slate-800">{order.customerName}</p>
-                      <p className="text-xs text-slate-400">{order.whatsapp}</p>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + orderTypeClass(order.orderType)}>
-                        {orderTypeLabel(order.orderType)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <p className="max-w-[260px] truncate font-bold text-slate-600">{order.serviceSummary}</p>
-                    </td>
-                    <td className="px-5 py-4 font-black text-slate-800">{formatCurrency(order.grandTotal)}</td>
-                    <td className="px-5 py-4">
-                      <select
-                        value={order.paymentStatus}
-                        disabled={updatingOrderId === order.orderId + "_paymentStatus"}
-                        onChange={(event) => updateOrderField(order, "paymentStatus", event.target.value)}
-                        className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none " + paymentClass(order.paymentStatus)}
-                      >
-                        <option value="Belum Dibayar">Belum Dibayar</option>
-                        <option value="DP">DP</option>
-                        <option value="Lunas">Lunas</option>
-                      </select>
-                    </td>
-                    <td className="px-5 py-4">
-                      <select
-                        value={order.status}
-                        disabled={updatingOrderId === order.orderId + "_status"}
-                        onChange={(event) => updateOrderField(order, "status", event.target.value)}
-                        className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none " + statusClass(order.status)}
-                      >
-                        <option value="Baru">Baru</option>
-                        <option value="Diproses">Diproses</option>
-                        <option value="Selesai">Selesai</option>
-                        <option value="Diambil">Diambil</option>
-                      </select>
-                    </td>
-                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.estimatedFinish}</td>
-                    <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdBy}</td>
-                    <td className="px-5 py-4">
-                      <select
-                        defaultValue=""
-                        onChange={(event) => { if (event.target.value) { sendWhatsApp(order, event.target.value); event.target.value = ""; } }}
-                        className="rounded-lg border border-emerald-200 bg-green-50 px-3 py-2 text-xs font-black text-emerald-600 outline-none transition-all duration-300 hover:bg-emerald-500 hover:text-white"
-                      >
-                        <option value="">Kirim WA</option>
-                        {(messageTemplates || []).map((template) => (
-                          <option key={template.templateId} value={template.templateId}>{template.templateName}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-5 py-4">
-                      <button
-                        type="button"
-                        onClick={() => alert("Detail order " + order.orderId + " akan dikembangkan di tahap berikutnya.")}
-                        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition-all duration-300 hover:border-emerald-200 hover:bg-green-50 hover:text-emerald-600"
-                      >
-                        Detail
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
+                {displayOrders.map((order) => {
+                  const syncStatus = order.syncStatus || "";
+                  const isSyncing = syncStatus === "pending";
+                  const isFailed = syncStatus === "failed";
+                  const isSynced = syncStatus === "synced";
+                  const rowKey = order.tempKey || order.orderId;
+                  const rowClass = "group text-sm transition-all duration-300 hover:bg-slate-50 " + (isSyncing ? "bg-emerald-50/40" : isFailed ? "bg-red-50/40" : "");
+
+                  return (
+                    <tr key={rowKey} className={rowClass}>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-black text-emerald-600">{order.orderId}</span>
+                          {isSyncing && (
+                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-emerald-700">
+                              <span className="material-symbols-outlined spin text-[12px]">progress_activity</span>
+                              Syncing
+                            </span>
+                          )}
+                          {isSynced && (
+                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-green-700">
+                              <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                              Synced
+                            </span>
+                          )}
+                          {isFailed && (
+                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-red-700">
+                              <span className="material-symbols-outlined text-[12px]">error</span>
+                              Failed
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdAt}</td>
+                      <td className="px-5 py-4">
+                        <p className="font-black text-slate-800">{order.customerName}</p>
+                        <p className="text-xs text-slate-400">{order.whatsapp}</p>
+                        {(isSyncing || isFailed) && (
+                          <p className={"mt-1 text-[10px] font-black " + (isFailed ? "text-red-500" : "text-emerald-600")}>
+                            {order.syncMessage || (isFailed ? "Gagal sinkronisasi" : "Menyinkronkan...")}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={"rounded-full px-2.5 py-1 text-[10px] font-black uppercase " + orderTypeClass(order.orderType)}>
+                          {orderTypeLabel(order.orderType)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="max-w-[260px] truncate font-bold text-slate-600">{order.serviceSummary}</p>
+                      </td>
+                      <td className="px-5 py-4 font-black text-slate-800">{formatCurrency(order.grandTotal)}</td>
+                      <td className="px-5 py-4">
+                        <select
+                          value={order.paymentStatus}
+                          disabled={isSyncing || isFailed || updatingOrderId === order.orderId + "_paymentStatus"}
+                          onChange={(event) => updateOrderField(order, "paymentStatus", event.target.value)}
+                          className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none disabled:cursor-not-allowed disabled:opacity-60 " + paymentClass(order.paymentStatus)}
+                        >
+                          <option value="Belum Dibayar">Belum Dibayar</option>
+                          <option value="DP">DP</option>
+                          <option value="Lunas">Lunas</option>
+                        </select>
+                      </td>
+                      <td className="px-5 py-4">
+                        <select
+                          value={order.status}
+                          disabled={isSyncing || isFailed || updatingOrderId === order.orderId + "_status"}
+                          onChange={(event) => updateOrderField(order, "status", event.target.value)}
+                          className={"rounded-full border-0 px-2.5 py-1 text-[10px] font-black uppercase outline-none disabled:cursor-not-allowed disabled:opacity-60 " + statusClass(order.status)}
+                        >
+                          <option value="Baru">Baru</option>
+                          <option value="Diproses">Diproses</option>
+                          <option value="Selesai">Selesai</option>
+                          <option value="Diambil">Diambil</option>
+                        </select>
+                      </td>
+                      <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.estimatedFinish}</td>
+                      <td className="px-5 py-4 text-xs font-bold text-slate-500">{order.createdBy}</td>
+                      <td className="px-5 py-4">
+                        <select
+                          defaultValue=""
+                          disabled={isSyncing || isFailed}
+                          onChange={(event) => { if (event.target.value) { sendWhatsApp(order, event.target.value); event.target.value = ""; } }}
+                          className="rounded-lg border border-emerald-200 bg-green-50 px-3 py-2 text-xs font-black text-emerald-600 outline-none transition-all duration-300 hover:bg-emerald-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Kirim WA</option>
+                          {(messageTemplates || []).map((template) => (
+                            <option key={template.templateId} value={template.templateId}>{template.templateName}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={() => alert((isFailed ? (order.syncMessage || "Order gagal tersimpan.") : "Detail order " + order.orderId + " akan dikembangkan di tahap berikutnya."))}
+                          className={"rounded-lg border px-3 py-2 text-xs font-black transition-all duration-300 hover:border-emerald-200 hover:bg-green-50 hover:text-emerald-600 " + (isFailed ? "border-red-200 bg-red-50 text-red-500" : "border-slate-200 text-slate-500")}
+                        >
+                          {isFailed ? "Info" : "Detail"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+</tbody>
             </table>
           </div>
 
